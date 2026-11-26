@@ -1046,11 +1046,24 @@
   ];
 
   // 围绕树公转的光球：轨道半径 / 高度 / 相位 / 颜色 / 尺寸
+  // 12 颗 = 4 组 × 3 颗：每组三颗一起炸开、合力拼出一句，所以字是「多颗光球组成」的
   const ORBS = [
-    { r: 6.2, y: 8.4, phi: 0.35, col: [255, 228, 160], s: 4.0 },
-    { r: 5.4, y: 4.6, phi: 2.15, col: [255, 150, 200], s: 4.4 },
-    { r: 6.9, y: 3.2, phi: 3.70, col: [150, 205, 255], s: 3.8 },
-    { r: 5.9, y: 10.2, phi: 1.30, col: [198, 165, 255], s: 4.2 }
+    // 第 1 组：金色系（树顶一带）
+    { r: 5.6, y: 9.8, phi: 0.30, col: [255, 228, 160], s: 3.9 },
+    { r: 6.6, y: 8.5, phi: 2.20, col: [255, 205, 132], s: 4.1 },
+    { r: 5.1, y: 10.6, phi: 4.45, col: [255, 240, 192], s: 3.7 },
+    // 第 2 组：粉色系（中上）
+    { r: 6.9, y: 7.1, phi: 1.05, col: [255, 150, 200], s: 4.2 },
+    { r: 6.0, y: 5.9, phi: 3.35, col: [255, 182, 216], s: 3.9 },
+    { r: 6.4, y: 7.9, phi: 5.30, col: [255, 122, 176], s: 4.0 },
+    // 第 3 组：蓝色系（中下）
+    { r: 5.8, y: 4.6, phi: 0.85, col: [150, 205, 255], s: 4.0 },
+    { r: 6.8, y: 3.5, phi: 2.95, col: [120, 186, 250], s: 4.2 },
+    { r: 5.4, y: 5.4, phi: 5.05, col: [184, 226, 255], s: 3.8 },
+    // 第 4 组：紫色系（靠下）
+    { r: 6.2, y: 2.5, phi: 1.75, col: [198, 165, 255], s: 4.1 },
+    { r: 5.9, y: 3.8, phi: 3.80, col: [176, 142, 246], s: 3.9 },
+    { r: 6.7, y: 2.0, phi: 5.75, col: [216, 190, 255], s: 3.9 }
   ];
 
   const orbCv = document.getElementById("orb");
@@ -1163,7 +1176,7 @@
 
     for (let i = 0; i < ORBS.length; i++) {
       const o = ORBS[i];
-      const birth = STARS_AT + i * 0.16;
+      const birth = STARS_AT + i * 0.08;
       const k = Math.max(0, Math.min(1, (t - birth) / 0.9));
       const fade = 1 - Math.pow(1 - k, 3);
       if (fade <= 0.01) continue;
@@ -1177,9 +1190,12 @@
       const sx = Math.max(cssW * 0.11, Math.min(cssW * 0.89, cx0));
       const sy = Math.max(cssH * 0.13, Math.min(cssH * 0.90, cy00));
       const depth = Math.max(0.62, Math.min(1.5, f / 31));
-      const R = o.s * (cssH / 900) * depth * 1.95;   // 粒子团半径
+      const R = o.s * (cssH / 900) * depth * 2.7;   // 粒子团半径
       const scatter = 1 + gone * 1.1;
-      const baseA = fade * (1 - gone) * (0.92 + 0.08 * Math.sin(t * 2.0 + i));
+      // 闪动：整体明暗呼吸 + 偶发强闪 + 每颗粒子各自闪烁
+      const twk = 0.80 + 0.13 * Math.sin(t * 5.2 + i * 2.1) + 0.07 * Math.sin(t * 11.4 + i * 3.7);
+      const glint = Math.pow(Math.max(0, Math.sin(t * 3.4 + i * 1.9)), 14) * 0.42;
+      const baseA = fade * (1 - gone) * (twk + glint);
 
       dot(DOTS[i], sx, sy, R * 4.6 * scatter, baseA * 0.40);   // 中心微光
 
@@ -1187,14 +1203,15 @@
       for (let j = 0; j < parts.length; j++) {
         const p = parts[j];
         const ang = p.a + t * p.w;
+        const shim = 0.72 + 0.28 * Math.sin(t * 9.0 + j * 1.7 + i * 0.9);
         let rad, a;
         if (p.core) {
           rad = p.rad * R * scatter;
-          a = baseA * 0.95;
+          a = baseA * 0.95 * shim;
         } else {
           const ph = (t * 0.42 + p.ph) % 1;
           rad = (0.3 + ph * 2.0) * R * scatter;
-          a = baseA * 0.9 * (1 - ph);
+          a = baseA * 0.9 * (1 - ph) * shim;
         }
         dot(p.core ? DOT_W : DOTS[i],
             sx + Math.cos(ang) * rad,
@@ -1266,6 +1283,34 @@
 
   const textParts = [];        // 2D 文字粒子
   let textGen = 0;
+
+  // 多颗光球合力拼字：每颗粒子随机从组内某一颗光球的位置炸出来，颜色跟着那颗走
+  function spawnTextMulti(tg, cx, cy, srcs, cap, arcK) {
+    const n = tg.n;
+    if (n < 1 || !srcs.length) return;
+    const cnt = Math.min(cap, n);
+    const stepN = n / cnt;
+    const now = curT;
+    for (let k = 0; k < cnt; k++) {
+      const i = Math.min(n - 1, Math.floor(k * stepN));
+      const s = srcs[Math.floor(Math.random() * srcs.length)];
+      const tx = cx + tg.xy[i * 2] + (Math.random() * 2 - 1) * 1.0;
+      const ty = cy + tg.xy[i * 2 + 1] + (Math.random() * 2 - 1) * 1.0;
+      const a = Math.random() * TAU, r = Math.random() * s.spread;
+      const x0 = s.x + Math.cos(a) * r, y0 = s.y + Math.sin(a) * r * 0.9;
+      const mx = (x0 + tx) * 0.5 + (Math.random() * 2 - 1) * arcK;
+      const my = (y0 + ty) * 0.5 - arcK * 0.55 + (Math.random() * 2 - 1) * arcK * 0.5;
+      textParts.push({
+        x0: x0, y0: y0, tx: tx, ty: ty,
+        cx: 2 * mx - (x0 + tx) * 0.5, cy: 2 * my - (y0 + ty) * 0.5,
+        t0: now, delay: Math.random() * 0.28, dur: 0.95 + Math.random() * 0.4,
+        sz: 5.0 + Math.random() * 2.8, al: 0.78 + Math.random() * 0.22,
+        ph: Math.random() * TAU, die: -1,
+        spr: Math.random() < 0.15 ? DOT_W : s.spr,
+        core: Math.random() < 0.30 ? DOT_W : s.core
+      });
+    }
+  }
 
   // 从 (sx,sy) 炸开 → 沿弧线飞进文字
   function spawnText(tg, cx, cy, sx, sy, spr, core, spread, cap, arcK) {
@@ -1359,7 +1404,8 @@
         y -= 22 * d;
       }
       // 两遍叠画：外层柔光晕 + 内层亮芯 → 笔画更实、边缘更清楚
-      dot(p.spr, x, y, p.sz * 1.8, al * 0.26);
+      const haloK = (p.halo === undefined) ? 1 : p.halo;
+      dot(p.spr, x, y, p.sz * 1.8, al * 0.26 * haloK);
       dot(p.core, x, y, p.sz * 0.92, Math.min(1, al * 1.02));
     }
   }
@@ -1411,7 +1457,7 @@
     const cx0 = cssW * 0.5, cy0 = cssH * 0.44;
     const scx = cssW * 0.5, scy = cssH * 0.48;
     const k = (cssH * 0.74) / boxH;
-    const stride = Math.max(1, Math.floor(PXN / 3000));
+    const stride = Math.max(1, Math.floor(PXN / 3800));
     // 起点时间锚在时间轴上（不是"当前帧"），冻结时间轴截图也能落到正确阶段
     const st = (state.explodeAt >= 0)
       ? state.explodeAt + PX_T.spin1
@@ -1426,8 +1472,8 @@
       }
       if (!isFinite(sx) || !isFinite(sy)) continue;
       const i = Math.floor(Math.random() * tg.n);
-      const tx = cx0 + tg.xy[i * 2] + (Math.random() * 2 - 1) * 1.8;
-      const ty = cy0 + tg.xy[i * 2 + 1] + (Math.random() * 2 - 1) * 1.8;
+      const tx = cx0 + tg.xy[i * 2] + (Math.random() * 2 - 1) * 1.0;
+      const ty = cy0 + tg.xy[i * 2 + 1] + (Math.random() * 2 - 1) * 1.0;
       let dx = sx - cx0, dy = sy - cy0;
       const dl = Math.hypot(dx, dy) || 1;
       const mx = (sx + tx) * 0.5 + dx / dl * 210 + (Math.random() * 2 - 1) * 60;
@@ -1437,10 +1483,10 @@
         x0: sx, y0: sy, tx: tx, ty: ty,
         cx: 2 * mx - (sx + tx) * 0.5, cy: 2 * my - (sy + ty) * 0.5,
         t0: st, delay: Math.random() * 0.30, dur: 1.15 + Math.random() * 0.55,
-        sz: 4.4 + Math.random() * 2.4, al: 0.78 + Math.random() * 0.22,
-        ph: Math.random() * TAU, die: -1,
+        sz: 5.0 + Math.random() * 1.9, al: 0.88 + Math.random() * 0.12,
+        ph: Math.random() * TAU, die: -1, halo: 0.78,
         spr: Math.random() < 0.18 ? DOT_W : RAINBOW[ri],
-        core: Math.random() < 0.25 ? CORE_W : RAINBOW_CORE[ri]
+        core: Math.random() < 0.10 ? CORE_W : RAINBOW[ri]
       });
     }
 
@@ -1545,33 +1591,47 @@
     return best;
   }
 
-  function doOrbClick(idx) {
-    if (idx < 0) return;
-    const o = ORBS[idx];
+  // 一轮 = 一组 3 颗光球一起炸开 → 合力拼出第 n 句
+  const GROUP = 3;
+  const ROUNDS = Math.floor(ORBS.length / GROUP);
+
+  function doRound(g) {
+    const ids = [];
+    for (let k = 0; k < GROUP; k++) ids.push(g * GROUP + k);
     const at = curT;
-    o.clickT = at;
-    const sx = orbScreen[idx].x, sy = orbScreen[idx].y;
-    o.lastX = sx; o.lastY = sy;
+    const srcs = [];
+    for (const id of ids) {
+      if (id >= ORBS.length) continue;
+      const o = ORBS[id];
+      o.clickT = at;
+      const s = orbScreen[id];
+      const x = (s && s.on) ? s.x : cssW * 0.5;
+      const y = (s && s.on) ? s.y : cssH * 0.34;
+      o.lastX = x; o.lastY = y;
+      srcs.push({ x: x, y: y, spread: Math.max(22, (s ? s.rad : 40) * 0.8),
+                  spr: DOTS[id], core: CORE_DOTS[id] });
+    }
+    if (!srcs.length) return;
 
     clearText();                       // 上一句就地散成粒子，飞进树顶爱心
     textGen++;
-    // 文案顺序固定：第几次点击就出第几句；颜色仍取被点光球的本色
     const si = Math.min(state.textSeq, BLESSINGS.length - 1);
     state.textSeq++;
-    spawnText(sentenceTargets(si), cssW * 0.5, cssH * txtRowY(),
-              sx, sy, DOTS[idx], CORE_DOTS[idx],
-              Math.max(20, orbScreen[idx].rad * 0.8), 2200, 115);
-    spawnHeartStream(sx, sy, idx);
+    spawnTextMulti(sentenceTargets(si), cssW * 0.5, cssH * txtRowY(), srcs, 2400, 118);
+    for (const id of ids) {
+      if (id >= ORBS.length) continue;
+      spawnHeartStream(ORBS[id].lastX, ORBS[id].lastY, id);
+    }
   }
 
-  // 全自动播放：从光球出现的时刻起，每隔 AUTO_GAP 秒由一颗光球自己化字，不再需要点击
-  const AUTO_START = STARS_AT + 1.1;
-  const AUTO_GAP = 3.0;
+  // 全自动播放：每轮先亮 5 秒左右，再由下一组光球接力
+  const AUTO_START = STARS_AT + 2.6;
+  const AUTO_GAP = 5.6;
   let autoIdx = 0;
 
   function autoAdvance(t) {
-    while (autoIdx < ORBS.length && t >= AUTO_START + autoIdx * AUTO_GAP) {
-      doOrbClick(autoIdx);
+    while (autoIdx < ROUNDS && t >= AUTO_START + autoIdx * AUTO_GAP) {
+      doRound(autoIdx);
       autoIdx++;
     }
   }
