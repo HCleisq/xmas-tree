@@ -1,0 +1,1588 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>QQ独家制造</title>
+<style>
+  html, body { margin:0; height:100%; background:#000; overflow:hidden; }
+  #stage {
+    position:fixed; inset:0;
+    background:
+      radial-gradient(ellipse 70% 55% at 50% 40%, #07101f 0%, #03060d 45%, #000 100%);
+  }
+  #bg, #gl { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #gl { pointer-events:none; }
+
+  /* 唯一的文字：QQ独家制造 */
+  #signature {
+    position:absolute; left:4.2%; top:31%;
+    color:#fff; white-space:nowrap; user-select:none; pointer-events:none;
+    font-family:'Microsoft YaHei UI','Microsoft YaHei','PingFang SC',system-ui,sans-serif;
+    font-weight:700;
+    font-size:clamp(22px, 2.7vw, 46px);
+    letter-spacing:.10em;
+    opacity:0;
+    animation:sigIn 2.2s 2.3s ease-out forwards;
+    text-shadow:0 0 14px rgba(255,255,255,.62), 0 0 40px rgba(255,170,220,.42);
+  }
+  @keyframes sigIn { from{opacity:0; transform:translateY(16px) scale(.95);} to{opacity:1; transform:none;} }
+
+  /* 手机竖屏：签名挪到左上角、缩小，避免压在树上 */
+  @media (max-width: 640px) {
+    #signature {
+      left:6%; top:5.5%;
+      font-size:clamp(16px, 5.2vw, 24px);
+      letter-spacing:.06em;
+    }
+  }
+
+  /* 环绕公转的彩色光点（可点击） */
+  #orb { position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+
+  /* 向上流动的种子粒子 */
+  #seed {
+    position:absolute; width:18px; height:18px; margin:-9px 0 0 -9px;
+    border-radius:50%; pointer-events:none; opacity:0;
+    background:radial-gradient(circle, #fff 0%, #ffe9b5 34%, rgba(255,210,140,.35) 62%, rgba(255,200,120,0) 78%);
+    filter:drop-shadow(0 0 10px rgba(255,235,180,.9));
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="bg"></canvas>
+  <canvas id="gl"></canvas>
+  <canvas id="orb"></canvas>
+  <div id="seed"></div>
+  <div id="signature">QQ独家制造</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const TAU = Math.PI * 2;
+  const TREE_HEIGHT = 12.0;
+  const CAM_DIST = 13.0, CAM_HEIGHT = 6.0, PITCH = -0.25;
+  const TREE_POINTS = 60000, GROUND_POINTS = 3000, STAR_POINTS = 1200, HEART_POINTS = 2000;
+
+  const BLOOM_TRAVEL = 2.0;    // 种子从树底升到树顶的用时
+  const BLOOM_DUR = 0.95;      // 每颗粒子旋转绽放的用时
+  const EXPLODE_AT = 2.55;     // 树顶炸开时刻
+  const STARS_AT = 3.20;       // 星空亮星出现时刻
+
+  // ---------------- 数据生成（与 tree.py 一致） ----------------
+  const pos = [], col = [], blm = [];   // 位置 / 颜色 / (出生时间, 回旋角)
+
+  function addPoint(x, y, z, r, g, b, birth, spin) {
+    pos.push(x, y, z);
+    col.push(r / 255, g / 255, b / 255);
+    blm.push(birth, spin);
+  }
+
+  function randInt(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+
+  // 1) 树体：70% 螺旋灯带 + 30% 蓬松填充
+  (function genTree() {
+    const spiralN = Math.floor(TREE_POINTS * 0.56);
+    const loops = 9;
+    for (let i = 0; i < spiralN; i++) {
+      const u = Math.random();
+      const h = Math.pow(u, 1.6);
+      const y = TREE_HEIGHT * h + 0.2;
+
+      let baseR = Math.pow(1 - h, 1.1) * 3.2;
+      const wave = Math.max(0, Math.sin((h * 5.8 + 0.15) * TAU));
+      baseR *= (1 + 0.65 * wave);
+
+      const t = u * loops * TAU;
+      const angle = t + (Math.random() * 0.44 - 0.22);
+      const r = baseR * (0.85 + Math.random() * 0.23);
+      const x = Math.cos(angle) * r, z = Math.sin(angle) * r;
+
+      const midBoost = Math.max(0.15, 1 - Math.abs(h - 0.55) * 1.5);
+      let g = 155 + Math.floor(90 * midBoost) + randInt(-15, 20);
+      let b = 185 + Math.floor(70 * midBoost) + randInt(-15, 35);
+      let rc = 255;
+      if (Math.random() < 0.08) { g = 255 - randInt(0, 35); b = 230 + randInt(0, 25); }
+
+      addPoint(x, y, z, rc, Math.min(255, g), Math.min(255, b),
+               h * BLOOM_TRAVEL + Math.random() * 0.14,
+               (Math.random() - 0.5) * 1.15);
+    }
+
+    const fillN = TREE_POINTS - spiralN;
+    for (let i = 0; i < fillN; i++) {
+      const h = Math.pow(Math.random(), 1.9);
+      const y = TREE_HEIGHT * h + 0.2 + (Math.random() * 0.16 - 0.08);
+
+      let baseR = Math.pow(1 - h, 1.1) * 3.7;
+      const wave = Math.max(0, Math.sin((h * 5.8 + 0.15) * TAU));
+      baseR *= (1 + 0.65 * wave);
+
+      const r = baseR * Math.sqrt(Math.random());
+      const angle = Math.random() * TAU;
+      const x = Math.cos(angle) * r + (Math.random() * 0.16 - 0.08);
+      const z = Math.sin(angle) * r + (Math.random() * 0.16 - 0.08);
+
+      addPoint(x, y, z, 255, randInt(165, 225), randInt(190, 250),
+               h * BLOOM_TRAVEL + Math.random() * 0.14,
+               (Math.random() - 0.5) * 1.15);
+    }
+  })();
+
+  // 2) 地面法阵光环（收在树根附近，别糊成一片墙）
+  (function genGround() {
+    const rings = [4.7, 5.9, 7.1, 8.3];
+    for (let i = 0; i < GROUND_POINTS; i++) {
+      const ring = rings[Math.floor(Math.random() * rings.length)];
+      let gauss = 0;
+      for (let k = 0; k < 4; k++) gauss += Math.random();
+      gauss = (gauss - 2) / 1.6;
+      const r = ring + gauss * 0.26;
+      const theta = Math.random() * TAU;
+      const x = Math.cos(theta) * r, z = Math.sin(theta) * r;
+      const c = Math.random() < 0.12 ? randInt(185, 210) : randInt(120, 165);
+      addPoint(x, -0.25, z, c, c, 255,
+               0.02 + Math.random() * 0.30, (Math.random() - 0.5) * 0.4);
+    }
+  })();
+
+  // 3) 空中亮点（随场景旋转）—— 不排队、成簇散落
+  (function genStars() {
+    const clumps = [];
+    const CL_N = 14;
+    for (let i = 0; i < CL_N; i++) {
+      clumps.push({
+        x: (Math.random() * 2 - 1) * 19,
+        z: (Math.random() * 2 - 1) * 19,
+        y: 2.5 + Math.random() * 16,
+        sx: 1.2 + Math.random() * 4.2,
+        sy: 1.0 + Math.random() * 3.6
+      });
+    }
+    for (let i = 0; i < STAR_POINTS; i++) {
+      let x, y, z;
+      if (Math.random() < 0.62) {
+        const c = clumps[Math.floor(Math.random() * CL_N)];
+        // 成簇：高斯散开，越靠中心越密
+        let g = 0;
+        for (let k = 0; k < 3; k++) g += Math.random();
+        g = (g - 1.5) / 1.5;
+        let g2 = 0;
+        for (let k = 0; k < 3; k++) g2 += Math.random();
+        g2 = (g2 - 1.5) / 1.5;
+        x = c.x + g * c.sx;
+        z = c.z + g2 * c.sx * 0.8;
+        y = c.y + (Math.random() * 2 - 1) * c.sy;
+      } else {
+        // 零散点缀，位置故意不匀
+        x = (Math.random() * 2 - 1) * 22;
+        z = (Math.random() * 2 - 1) * 22;
+        y = 1.5 + Math.pow(Math.random(), 0.7) * 17;
+      }
+      const bright = Math.random();
+      const base = bright < 0.06 ? 255 : randInt(180, 235);
+      addPoint(x, y, z, base, base, 255,
+               1.30 + Math.random() * 1.05, (Math.random() - 0.5) * 0.5);
+    }
+  })();
+
+  // 4) 树顶爱心（单独渲染、始终面向镜头的公告板，不会随场景转到侧面变成一条线）
+  const HEART_Y = TREE_HEIGHT + 0.95;
+  const hPos = [], hCol = [], hBlm = [];
+  (function genHeart() {
+    for (let i = 0; i < HEART_POINTS; i++) {
+      const t = Math.random() * TAU;
+      // 45% 的点压在外轮廓上，让心形边界清楚；其余向内填充
+      const s = Math.random() < 0.45 ? 1.0 - Math.random() * 0.05 : Math.sqrt(Math.random());
+      const hx = Math.pow(Math.sin(t), 3) * 16;
+      const hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      const wx = (hx / 16) * 1.35 * s;
+      const wy = HEART_Y + (hy / 16) * 1.35 * s;
+      const wz = (Math.random() * 0.24 - 0.12) * s;
+      const edge = 1 - s;
+      const g = Math.max(130, Math.min(255, Math.floor(165 + 70 * edge)));
+      const b = Math.max(140, Math.min(255, Math.floor(205 + 50 * edge)));
+      hPos.push(wx, wy, wz);
+      hCol.push(1, g / 255, b / 255);
+      hBlm.push(2.05 + Math.random() * 0.35, (Math.random() - 0.5) * 1.0);
+    }
+  })();
+
+  const N_POINTS = blm.length / 2;
+  const N_HEART = hBlm.length / 2;
+
+  // ---------------- 背景群星（静态 2D） ----------------
+  const bg = document.getElementById("bg");
+  const bg2d = bg.getContext("2d");
+  function drawBgStars() {
+    const w = bg.width, h = bg.height;
+    bg2d.clearRect(0, 0, w, h);
+    const n = Math.round((w * h) / 2400);
+
+    // 先随机撒十几个星团中心，再让大部分点围过去；剩下少量零散点
+    const cl = [];
+    for (let i = 0; i < 16; i++) {
+      cl.push([Math.random() * w, Math.random() * h * 0.94,
+               40 + Math.random() * 190, 30 + Math.random() * 150]);
+    }
+
+    for (let i = 0; i < n; i++) {
+      let x, y;
+      if (Math.random() < 0.66) {
+        const c = cl[Math.floor(Math.random() * cl.length)];
+        let g1 = 0, g2 = 0;
+        for (let k = 0; k < 3; k++) { g1 += Math.random(); g2 += Math.random(); }
+        x = c[0] + ((g1 - 1.5) / 1.5) * c[2];
+        y = c[1] + ((g2 - 1.5) / 1.5) * c[3];
+      } else {
+        x = Math.random() * w;
+        y = Math.random() * h * 0.94;
+      }
+      if (x < 0 || x > w || y < 0 || y > h) continue;
+
+      const r = 0.3 + Math.pow(Math.random(), 2.2) * 1.5;
+      const a = 0.12 + Math.random() * 0.72;
+      bg2d.fillStyle = "rgba(" + (198 + Math.floor(Math.random() * 57)) + "," +
+                                  (206 + Math.floor(Math.random() * 49)) + ",255," + a + ")";
+      bg2d.beginPath();
+      bg2d.arc(x, y, r, 0, TAU);
+      bg2d.fill();
+    }
+  }
+
+  // ---------------- WebGL ----------------
+  const glc = document.getElementById("gl");
+  const gl = glc.getContext("webgl", {
+    alpha: true, antialias: false, premultipliedAlpha: true, powerPreference: "high-performance"
+  });
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(s));
+    }
+    return s;
+  }
+  function program(vs, fs) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
+    return p;
+  }
+
+  const FRAG = [
+    "precision mediump float;",
+    "varying vec3 vColor;",
+    "varying float vAlpha;",
+    "void main(){",
+    "  vec2 c = gl_PointCoord - vec2(0.5);",
+    "  float d = length(c) * 2.0;",
+    "  if (d > 1.0) discard;",
+    "  float a = pow(1.0 - d, 1.55);",
+    "  float k = a * vAlpha;",
+    "  gl_FragColor = vec4(vColor * k, k);",
+    "}"
+  ].join("\n");
+
+  const VS_SCENE = [
+    "attribute vec3 aPos;",
+    "attribute vec3 aColor;",
+    "attribute vec2 aBloom;",
+    "uniform float uTime;",
+    "uniform float uAngle;",
+    "uniform vec2 uRes;",
+    "uniform float uDpr;",
+    "uniform float uScale;",
+    "uniform float uCY;",
+    "uniform float uDim;",
+    "uniform float uBlast;",
+    "varying vec3 vColor;",
+    "varying float vAlpha;",
+    "const float CAM_DIST = 13.0;",
+    "const float CAM_HEIGHT = 6.0;",
+    "const float PITCH = -0.25;",
+    "void main(){",
+    "  float dt = uTime - aBloom.x;",
+    "  float p = clamp(dt / 0.95, 0.0, 1.0);",
+    "  float e = 1.0 - pow(1.0 - p, 3.0);",
+    "  float rs = 0.045 + 0.955 * e;",
+    "  float sp = aBloom.y * (1.0 - e);",
+    "  float ct = cos(sp), st = sin(sp);",
+    "  float x0 = aPos.x * ct - aPos.z * st;",
+    "  float z0 = aPos.x * st + aPos.z * ct;",
+    "  float x = x0 * rs;",
+    "  float z = z0 * rs;",
+    "  float yy = (aPos.y - uCY) * uScale + uCY;",
+    "  if (uBlast > 0.0) {",
+    "    float h1 = fract(sin(dot(aPos.xz, vec2(12.9898, 78.233)) + aPos.y * 1.7) * 43758.5453);",
+    "    float h2 = fract(sin(dot(aPos.zy, vec2(39.346, 11.135)) + aPos.x * 2.3) * 24634.6345);",
+    "    float rr = max(0.35, length(aPos.xz));",
+    "    float spd = (3.4 + h1 * 9.2) * uBlast;",
+    "    x += (aPos.x / rr) * spd + (h2 - 0.5) * 2.4 * uBlast;",
+    "    z += (aPos.z / rr) * spd + (h1 - 0.5) * 2.4 * uBlast;",
+    "    yy += (h2 - 0.30) * 5.6 * uBlast + uBlast * uBlast * 4.4;",
+    "  }",
+    "  float ca = cos(uAngle), sa = sin(uAngle);",
+    "  float xz = x * ca - z * sa;",
+    "  float zz = x * sa + z * ca;",
+    "  float cp = cos(PITCH), cv = sin(PITCH);",
+    "  float yp = yy * cp - zz * cv;",
+    "  float zp = yy * cv + zz * cp + CAM_DIST;",
+    "  yp -= CAM_HEIGHT;",
+    "  float f = 470.0 / zp;",
+    "  float sc = uRes.y / 900.0;",
+    "  float sx = uRes.x * 0.5 + xz * f * sc;",
+    "  float sy = uRes.y * 0.5 - yp * f * sc;",
+    "  gl_Position = vec4(sx / uRes.x * 2.0 - 1.0, 1.0 - sy / uRes.y * 2.0, 0.0, 1.0);",
+    "  float base = max(0.9, 2.2 - zp * 0.07);",
+    "  gl_PointSize = base * sc * uDpr * (0.55 + 0.45 * e);",
+    "  vColor = aColor;",
+    "  vAlpha = (dt < 0.0) ? 0.0 : e * uDim * (1.0 - clamp((uBlast - 0.28) / 0.72, 0.0, 1.0));",
+    "}"
+  ].join("\n");
+
+  const VS_BURST = [
+    "attribute vec3 aPos;",
+    "attribute vec3 aVel;",
+    "attribute vec3 aColor;",
+    "attribute vec3 aMeta;",
+    "uniform float uTime;",
+    "uniform float uAngle;",
+    "uniform vec2 uRes;",
+    "uniform float uDpr;",
+    "varying vec3 vColor;",
+    "varying float vAlpha;",
+    "const float CAM_DIST = 13.0;",
+    "const float CAM_HEIGHT = 6.0;",
+    "const float PITCH = -0.25;",
+    "void main(){",
+    "  float t = uTime - aMeta.x;",
+    "  if (t < 0.0 || t > aMeta.y) {",
+    "    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);",
+    "    gl_PointSize = 0.0;",
+    "    vAlpha = 0.0;",
+    "    vColor = vec3(1.0);",
+    "    return;",
+    "  }",
+    "  float k = t / aMeta.y;",
+    "  float x = aPos.x + aVel.x * t;",
+    "  float y = aPos.y + aVel.y * t - 0.85 * t * t;",
+    "  float z = aPos.z + aVel.z * t;",
+    "  float ca = cos(uAngle), sa = sin(uAngle);",
+    "  float xz = x * ca - z * sa;",
+    "  float zz = x * sa + z * ca;",
+    "  float cp = cos(PITCH), cv = sin(PITCH);",
+    "  float yp = y * cp - zz * cv;",
+    "  float zp = y * cv + zz * cp + CAM_DIST;",
+    "  yp -= CAM_HEIGHT;",
+    "  float f = 470.0 / zp;",
+    "  float sc = uRes.y / 900.0;",
+    "  float sx = uRes.x * 0.5 + xz * f * sc;",
+    "  float sy = uRes.y * 0.5 - yp * f * sc;",
+    "  gl_Position = vec4(sx / uRes.x * 2.0 - 1.0, 1.0 - sy / uRes.y * 2.0, 0.0, 1.0);",
+    "  vColor = aColor;",
+    "  vAlpha = (1.0 - k) * (1.0 - k);",
+    "  gl_PointSize = aMeta.z * (1.0 - 0.55 * k) * sc * uDpr;",
+    "}"
+  ].join("\n");
+
+  let sceneProg = null, burstProg = null;
+  let phxProg = null;
+  let sceneBuf = null, burstBuf = null, heartBuf = null;
+  let phxColorBuf = null, phxDynBuf = null;
+  let uScene = {}, uBurst = {}, uPhx = {};
+
+  // 凤凰粒子用的极简着色器：位置是屏幕像素，逐帧由 CPU 算好塞进缓冲
+  const VS_PHOENIX = [
+    "attribute vec4 aP;",
+    "attribute vec4 aC;",
+    "uniform vec2 uRes;",
+    "uniform float uDpr;",
+    "varying vec3 vColor;",
+    "varying float vAlpha;",
+    "void main(){",
+    "  vec2 ndc = vec2(aP.x / uRes.x * 2.0 - 1.0, 1.0 - aP.y / uRes.y * 2.0);",
+    "  gl_Position = vec4(ndc, 0.0, 1.0);",
+    "  gl_PointSize = max(1.0, aP.z) * uDpr;",
+    "  vColor = aC.rgb;",
+    "  vAlpha = aP.w * aC.w;",
+    "}"
+  ].join("\n");
+
+  // 炸开粒子
+  const BURST_N = 420;
+  const bPos = [], bVel = [], bCol = [], bMeta = [];
+  (function genBurst() {
+    for (let i = 0; i < BURST_N; i++) {
+      const th = Math.random() * TAU;
+      const ph = Math.acos(1 - 2 * Math.random());
+      const sp = 1.6 + Math.random() * 6.4;
+      bPos.push(0, HEART_Y + 0.15, 0);
+      bVel.push(
+        Math.sin(ph) * Math.cos(th) * sp,
+        Math.cos(ph) * sp * 0.9 + 0.8,
+        Math.sin(ph) * Math.sin(th) * sp
+      );
+      const t = Math.random();
+      if (t < 0.55) bCol.push(1.0, 0.94, 0.78);
+      else if (t < 0.82) bCol.push(1.0, 0.62, 0.78);
+      else bCol.push(0.72, 0.88, 1.0);
+      bMeta.push(Math.random() * 0.10,
+                 1.1 + Math.random() * 1.3,
+                 2.4 + Math.random() * 2.6);
+    }
+  })();
+
+  // ====================================================================
+  //  鎏金凤凰：几何由 Python 版 Anka Kuşu 的生成式移植过来
+  //  （躯干/头/喙/冠羽/双层翼+15根飞羽+10根覆羽/5条火舌尾羽）
+  // ====================================================================
+  const K_BODY = 0, K_WING = 1, K_TAIL = 2, K_CREST = 3, K_GLOW = 4;
+  const pxX = [], pxY = [], pxK = [], pxSpan = [], pxU = [], pxPh = [],
+        pxSz = [], pxCu = [], pxBr = [], pxAmp = [];
+  let boxCX = 0, boxCY = 0, boxH = 1;
+
+  function nrm(sd) {
+    let s = 0;
+    for (let i = 0; i < 3; i++) s += Math.random();
+    return (s - 1.5) * 1.6 * sd;
+  }
+
+  // 粉白色芯 → 浅粉 → 玫瑰 → 品红 → 深紫红（与整页粉白圣诞树统一色系）
+  function goldColor(u) {
+    u = Math.max(0, Math.min(1, u));
+    const stops = [
+      [255, 250, 253], [255, 208, 232], [255, 150, 202],
+      [238, 92, 168], [168, 40, 118]
+    ];
+    const seg = Math.min(3, Math.floor(u * 4));
+    const k = u * 4 - seg;
+    const a = stops[seg], b = stops[seg + 1];
+    return [
+      (a[0] + (b[0] - a[0]) * k) / 255,
+      (a[1] + (b[1] - a[1]) * k) / 255,
+      (a[2] + (b[2] - a[2]) * k) / 255
+    ];
+  }
+
+  function addP(x, y, kind, span, u, size, cu, br, ph, amp) {
+    pxX.push(x); pxY.push(y); pxK.push(kind); pxSpan.push(span);
+    pxU.push(u); pxPh.push(ph === undefined ? Math.random() * TAU : ph);
+    pxSz.push(size); pxCu.push(cu); pxBr.push(br);
+    pxAmp.push(amp === undefined ? (0.72 + Math.random() * 0.28) : amp);
+  }
+
+  (function buildPhoenixGeom() {
+    // ---- 躯干 + 颈 + 头（比原版加厚 1.55 倍，否则在巨翼衬托下像一根针）
+    for (let i = 0; i < 2600; i++) {
+      const bs = Math.random();
+      const bv = nrm(0.42);
+      const bcx = 10 * Math.sin(bs * Math.PI * 1.35) - 6 * Math.pow(bs, 2.2);
+      const bcy = 75 - 183 * bs;
+      const chest = 28 * Math.exp(-Math.pow((bs - 0.34) / 0.24, 2));
+      const neck = 8.5 * Math.exp(-Math.pow((bs - 0.76) / 0.16, 2));
+      const head = 14.5 * Math.exp(-Math.pow((bs - 0.94) / 0.075, 2));
+      const bw = (chest + neck + head + 3) * 1.55;
+      const edge = Math.min(1, Math.abs(bv) * 1.15);
+      addP(bcx + bv * bw, bcy + nrm(2.2), K_BODY, 0, bs,
+           0.95 + Math.random() * 0.55, edge * 0.48 + (1 - bs) * 0.25,
+           0.82 + Math.random() * 0.33);
+    }
+    // ---- 胸口炽光（大颗粒、极低透明度 → 光晕）
+    for (let i = 0; i < 70; i++) {
+      const u = Math.random();
+      addP(nrm(1) * 26, 38 - u * 132, K_GLOW, 0, u,
+           8 + Math.random() * 14, 0.10, 1.2, undefined, 0.035 + Math.random() * 0.045);
+    }
+    // ---- 头（实心一颗）+ 向左伸出的喙
+    const HX = 2, HY = -101;
+    for (let i = 0; i < 210; i++) {
+      const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * 18;
+      addP(HX + Math.cos(a) * r, HY + Math.sin(a) * r * 0.92, K_BODY, 0, 0.97,
+           0.9 + Math.random() * 0.45, 0.05, 1.0);
+    }
+    for (let i = 0; i < 90; i++) {
+      const u = Math.random();
+      const v = (Math.random() * 2 - 1) * (1 - u);
+      addP(HX - 8 - u * 26, HY + 4 + v * 5 + u * u * 3.5, K_BODY, 0, u * 0.2,
+           0.85, 0.2, 1.0);
+    }
+    // ---- 三根冠羽（向后上方卷）
+    const CRESTS = [[76, -2.55, 0.55], [62, -2.28, 0.48], [48, -2.02, 0.40]];
+    for (const cr of CRESTS) {
+      for (let i = 0; i < 170; i++) {
+        const u = Math.pow(Math.random(), 0.85);
+        const v = Math.random() * 2 - 1;
+        const w = 4.2 * Math.pow(Math.sin(u * Math.PI), 0.7) + 1.2 * (1 - u);
+        const ang = cr[1] + cr[2] * Math.pow(u, 1.5);
+        addP(-10 + Math.cos(ang) * (u * cr[0]) - Math.sin(ang) * (v * w),
+             -112 + Math.sin(ang) * (u * cr[0]) + Math.cos(ang) * (v * w),
+             K_CREST, 0, u, 0.8, u * 0.72, 0.9 + Math.random() * 0.3);
+      }
+    }
+    // ---- 双侧翅膀：翼骨弧 + 15 根长飞羽 + 10 根覆羽
+    for (const sgn of [-1, 1]) {
+      for (let i = 0; i < 800; i++) {
+        const s = Math.random();
+        const v = nrm(0.45);
+        const ax = sgn * (16 + s * 262);
+        const ay = -18 - 110 * Math.sin(s * Math.PI * 0.78) + 26 * Math.pow(s, 2.2);
+        const aw = 25 + (7 - 25) * s;
+        addP(ax + sgn * v * 4, ay + v * aw, K_WING, s, s,
+             1.0 + Math.random() * 0.6, s * 0.45 + Math.abs(v) * 0.25,
+             0.82 + Math.random() * 0.33);
+      }
+      for (let k = 0; k < 15; k++) {
+        const fk = k / 14;
+        for (let i = 0; i < 250; i++) {
+          const u = Math.pow(Math.random(), 0.78);
+          const rv = Math.random() * 2 - 1;
+          const v = (rv < 0 ? -1 : 1) * Math.pow(Math.abs(rv), 0.75);
+          const sRoot = 0.10 + 0.88 * fk;
+          const rx = sgn * (16 + sRoot * 262);
+          const ry = -18 - 110 * Math.sin(sRoot * Math.PI * 0.78) + 26 * Math.pow(sRoot, 2.2);
+          const Lf = (110 + 58 * Math.pow(Math.sin(fk * Math.PI * 0.72), 0.75)) * (0.85 + 0.23 * fk);
+          const baseDir = 1.52 + (-0.34 - 1.52) * Math.pow(fk, 0.88);
+          const curl = 0.28 + (-0.36 - 0.28) * fk;
+          const ang = baseDir + curl * Math.pow(u, 1.4);
+          const wf = (14.5 + (9.5 - 14.5) * fk) * Math.pow(Math.sin(u * Math.PI), 0.65) * (1 - 0.35 * u);
+          const fx = rx + sgn * (Math.cos(ang) * (u * Lf) - Math.sin(ang) * (v * wf));
+          const fy = ry + (Math.sin(ang) * (u * Lf) + Math.cos(ang) * (v * wf));
+          const hi = Math.pow(Math.abs(v), 2) * 0.22;
+          addP(fx, fy, K_WING, Math.min(1.15, Math.abs(fx) / 345), u,
+               0.85 + Math.random() * 0.5,
+               Math.min(1, Math.max(0, fk * 0.25 + u * 0.78 - hi)),
+               0.80 + Math.random() * 0.36);
+        }
+      }
+      for (let k = 0; k < 10; k++) {
+        const fk = k / 9;
+        for (let i = 0; i < 160; i++) {
+          const u = Math.pow(Math.random(), 0.82);
+          const v = Math.random() * 2 - 1;
+          const sRoot = 0.08 + 0.74 * fk;
+          const rx = sgn * (16 + sRoot * 262);
+          const ry = -22 - 110 * Math.sin(sRoot * Math.PI * 0.78) + 24 * Math.pow(sRoot, 2.2);
+          const Lf = 62 + 30 * Math.sin(fk * Math.PI);
+          const ang = 1.25 + (0.05 - 1.25) * fk;
+          const wf = 12 * Math.pow(Math.sin(u * Math.PI), 0.7);
+          const fx = rx + sgn * (Math.cos(ang) * (u * Lf) - Math.sin(ang) * (v * wf));
+          const fy = ry + (Math.sin(ang) * (u * Lf) + Math.cos(ang) * (v * wf));
+          addP(fx, fy, K_WING, Math.min(1.15, Math.abs(fx) / 345), u,
+               0.8 + Math.random() * 0.45, u * 0.52 + fk * 0.15,
+               0.82 + Math.random() * 0.32);
+        }
+      }
+    }
+    // ---- 五条火舌尾羽（带末端“眼”与波纹）
+    const TAILS = [[0, 325, 14, 0], [-0.24, 275, 11.5, 0.9], [0.24, 275, 11.5, 1.7],
+                   [-0.48, 220, 9.5, 2.5], [0.48, 220, 9.5, 3.3]];
+    for (const tl of TAILS) {
+      for (let i = 0; i < 520; i++) {
+        const u = Math.pow(Math.random(), 0.85);
+        const rv = Math.random() * 2 - 1;
+        const v = (rv < 0 ? -1 : 1) * Math.pow(Math.abs(rv), 0.72);
+        const ribbonW = tl[2] * (0.28 + 0.72 * Math.pow(1 - u, 0.85));
+        const eyeTip = tl[2] * 1.15 * Math.exp(-Math.pow((u - 0.90) / 0.085, 2));
+        const wgt = (ribbonW + eyeTip) * (1 - Math.min(1, Math.max(0, (u - 0.96) / 0.04)));
+        const eyeGlow = Math.exp(-Math.pow((u - 0.90) / 0.065, 2)) * (1 - v * v);
+        addP(tl[0] * tl[1] * Math.pow(u, 1.12) + v * wgt, 62 + u * tl[1],
+             K_TAIL, 0, u, 0.9 + Math.random() * 0.55,
+             Math.min(1, Math.max(0, u * 0.92 - eyeGlow * 0.75)),
+             0.80 + Math.random() * 0.35, tl[3]);
+      }
+    }
+
+    // ---- 归一化用的包围盒
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (let i = 0; i < pxX.length; i++) {
+      if (pxX[i] < x0) x0 = pxX[i];
+      if (pxX[i] > x1) x1 = pxX[i];
+      if (pxY[i] < y0) y0 = pxY[i];
+      if (pxY[i] > y1) y1 = pxY[i];
+    }
+    boxCX = (x0 + x1) * 0.5;
+    boxCY = (y0 + y1) * 0.5;
+    boxH = Math.max(1, y1 - y0);
+  })();
+
+  const PXN = pxX.length;
+  const pxR1 = [], pxR2 = [];
+  for (let i = 0; i < PXN; i++) { pxR1.push(Math.random()); pxR2.push(Math.random()); }
+  const pxDyn = new Float32Array(PXN * 4);
+  const pxCol = new Float32Array(PXN * 4);
+  (function bakeColors() {
+    for (let i = 0; i < PXN; i++) {
+      const c = goldColor(pxCu[i]);
+      pxCol[i * 4] = c[0] * pxBr[i];
+      pxCol[i * 4 + 1] = c[1] * pxBr[i];
+      pxCol[i * 4 + 2] = c[2] * pxBr[i];
+      pxCol[i * 4 + 3] = pxAmp[i];
+    }
+  })();
+
+  // 爆开起点：62% 取自树体、20% 取自地面光环、18% 全屏随机
+  let pxStarted = false;
+  const pxSX = [], pxSY = [], pxDX = [], pxDY = [], pxDist = [], pxNX = [], pxNY = [];
+
+  function projScene(x, y, z, angle) {
+    const ca = Math.cos(angle), sa = Math.sin(angle);
+    const xz = x * ca - z * sa, zz = x * sa + z * ca;
+    const cp = Math.cos(PITCH), cv = Math.sin(PITCH);
+    const yp = y * cp - zz * cv - CAM_HEIGHT;
+    const zp = y * cv + zz * cp + CAM_DIST;
+    const f = 470 / zp;
+    const sc = cssH / 900;
+    return [cssW * 0.5 + xz * f * sc, cssH * 0.5 - yp * f * sc];
+  }
+
+  function sampleStart(angle) {
+    const [hx0, hy0] = heartScreenPos();
+    for (let i = 0; i < PXN; i++) {
+      let sx, sy;
+      const r = Math.random();
+      if (r < 0.62) {
+        const j = Math.floor(Math.random() * TREE_POINTS);
+        const p = projScene(pos[j * 3], pos[j * 3 + 1], pos[j * 3 + 2], angle);
+        sx = p[0]; sy = p[1];
+      } else if (r < 0.82) {
+        const j = TREE_POINTS + Math.floor(Math.random() * GROUND_POINTS);
+        const p = projScene(pos[j * 3], pos[j * 3 + 1], pos[j * 3 + 2], angle);
+        sx = p[0]; sy = p[1];
+      } else {
+        sx = Math.random() * cssW;
+        sy = Math.random() * cssH * 0.95;
+      }
+      let dx = sx - hx0, dy = sy - hy0;
+      let len = Math.hypot(dx, dy);
+      if (len < 1) { const a = Math.random() * TAU; dx = Math.cos(a); dy = Math.sin(a); len = 1; }
+      dx = dx / len + (Math.random() - 0.5) * 0.8;
+      dy = dy / len + (Math.random() - 0.5) * 0.8;
+      const l2 = Math.hypot(dx, dy) || 1;
+      pxSX.push(sx); pxSY.push(sy);
+      pxDX.push(dx / l2); pxDY.push(dy / l2);
+      pxDist.push((0.28 + Math.random() * 1.05) * Math.min(cssW, cssH) * 0.62);
+      pxNX.push(-dy / l2); pxNY.push(dx / l2);
+    }
+  }
+
+  // 终章时间轴（相对起爆时刻）
+  const PX_T = { conv0: 0.70, conv1: 2.45, spin1: 3.55, open1: 4.50 };
+
+  function drawPhoenixGL(t, angle) {
+    if (state.explodeAt < 0 || t < state.explodeAt) return;
+    if (!pxStarted) { pxStarted = true; sampleStart(angle); }
+
+    const age = t - state.explodeAt;
+    const cx = cssW * 0.5;
+    const cy = cssH * 0.48;
+    const S = cssH * 0.74;
+    const k = S / boxH;
+
+    const conv = Math.max(0, Math.min(1, (age - PX_T.conv0) / (PX_T.conv1 - PX_T.conv0)));
+    const convE = conv * conv * (3 - 2 * conv);
+    const spinRaw = Math.max(0, Math.min(1, (age - PX_T.conv1) / (PX_T.spin1 - PX_T.conv1)));
+    const spinE = spinRaw * spinRaw * (3 - 2 * spinRaw);
+    // 展翼与旋转同步进行：转满一圈的瞬间，翅膀已经全开，随即炸开（不再停顿扇翅）
+    const openRaw = Math.max(0, Math.min(1, (age - PX_T.conv1) / (PX_T.spin1 - PX_T.conv1)));
+    const openE = openRaw * openRaw * (3 - 2 * openRaw);
+
+    const theta = spinE * TAU;
+    const cth = Math.cos(theta);
+    const fold = 0.62 + 0.38 * openE;
+    const wingOpen = 0.26 + 0.74 * openE;
+    const flapPhase = age * 2.35 + 0.25;
+    const bob = -11 * Math.sin(flapPhase - 0.55);
+    const riseY = 0;
+    const fadeIn = Math.min(1, age / 0.08);
+    const EX_T = PX_T.spin1;             // 转完立刻炸开（相对起爆）
+    if (age > EX_T + 0.85) {             // 之后整只凤凰交给 2D 粒子去组字
+      buildFinaleText(false);
+      return;
+    }
+    const exB = age > EX_T ? Math.min(1, (age - EX_T) / 0.50) : 0;
+
+    for (let i = 0; i < PXN; i++) {
+      let lx = pxX[i], ly = pxY[i];
+      const kind = pxK[i], span = pxSpan[i], u = pxU[i];
+
+      if (kind === K_WING) {
+        const flap = Math.sin(flapPhase - span * 1.15) * wingOpen;
+        lx *= (1 - 0.11 * flap * flap * span);
+        ly += -66 * flap * Math.pow(span, 1.35);
+      } else if (kind === K_TAIL) {
+        lx += (18 + 30 * u) * Math.sin(u * 4.8 - age * 3.1 + pxPh[i]) * Math.pow(u, 0.85);
+      } else if (kind === K_CREST) {
+        ly += 4.5 * Math.sin(age * 4.2 + lx * 0.06);
+      }
+      ly += bob;
+
+      lx *= fold * cth;                       // 收翼 + 绕竖轴旋转
+
+      const txs = cx + (lx - boxCX) * k;
+      const tys = cy + (ly - boxCY) * k + riseY;
+
+      const eg = 1 - Math.exp(-age * 1.9);
+      const bx = pxSX[i] + pxDX[i] * pxDist[i] * eg;
+      const by = pxSY[i] + pxDY[i] * pxDist[i] * eg + 34 * eg * eg;
+
+      const arc = Math.sin(Math.PI * convE) * 78;
+      let px2 = bx + (txs - bx) * convE + pxNX[i] * arc;
+      let py2 = by + (tys - by) * convE + pxNY[i] * arc;
+      let a2 = fadeIn * (0.62 + 0.38 * convE);
+      if (exB > 0) {
+        // 二次炸开：凤凰整只向内向外炸散，同时淡出
+        const be = 1 - Math.pow(1 - exB, 2);
+        let dx = px2 - cx, dy = py2 - cy;
+        const dl = Math.hypot(dx, dy) || 1;
+        const spd = (0.30 + pxR1[i] * 1.15) * Math.min(cssW, cssH) * 0.95;
+        px2 += dx / dl * spd * be + (pxR2[i] - 0.5) * 110 * be;
+        py2 += dy / dl * spd * be - 70 * be * be;
+        a2 *= (1 - be);
+      }
+      pxDyn[i * 4]     = px2;
+      pxDyn[i * 4 + 1] = py2;
+      pxDyn[i * 4 + 2] = pxSz[i] * 2.0 * (1 + 0.10 * Math.sin(theta));
+      pxDyn[i * 4 + 3] = a2;
+    }
+
+    if (!finaleBuilt && age >= EX_T) buildFinaleText(true);
+
+    gl.useProgram(phxProg);
+    gl.uniform2f(uPhx.r, cssW, cssH);
+    gl.uniform1f(uPhx.d, dpr);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, phxDynBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, pxDyn);
+    const aP = gl.getAttribLocation(phxProg, "aP");
+    gl.enableVertexAttribArray(aP);
+    gl.vertexAttribPointer(aP, 4, gl.FLOAT, false, 16, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, phxColorBuf);
+    const aC = gl.getAttribLocation(phxProg, "aC");
+    gl.enableVertexAttribArray(aC);
+    gl.vertexAttribPointer(aC, 4, gl.FLOAT, false, 16, 0);
+    gl.drawArrays(gl.POINTS, 0, PXN);
+  }
+
+  function initGL() {
+    sceneProg = program(VS_SCENE, FRAG);
+    burstProg = program(VS_BURST, FRAG);
+    phxProg = program(VS_PHOENIX, FRAG);
+
+    uScene.t = gl.getUniformLocation(sceneProg, "uTime");
+    uScene.a = gl.getUniformLocation(sceneProg, "uAngle");
+    uScene.r = gl.getUniformLocation(sceneProg, "uRes");
+    uScene.d = gl.getUniformLocation(sceneProg, "uDpr");
+    uScene.s = gl.getUniformLocation(sceneProg, "uScale");
+    uScene.cy = gl.getUniformLocation(sceneProg, "uCY");
+    uScene.dim = gl.getUniformLocation(sceneProg, "uDim");
+    uScene.blast = gl.getUniformLocation(sceneProg, "uBlast");
+
+    uBurst.t = gl.getUniformLocation(burstProg, "uTime");
+    uBurst.a = gl.getUniformLocation(burstProg, "uAngle");
+    uBurst.r = gl.getUniformLocation(burstProg, "uRes");
+    uBurst.d = gl.getUniformLocation(burstProg, "uDpr");
+
+    uPhx.r = gl.getUniformLocation(phxProg, "uRes");
+    uPhx.d = gl.getUniformLocation(phxProg, "uDpr");
+
+    sceneBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, sceneBuf);
+    const data = new Float32Array(N_POINTS * 8);
+    for (let i = 0; i < N_POINTS; i++) {
+      data[i * 8 + 0] = pos[i * 3];
+      data[i * 8 + 1] = pos[i * 3 + 1];
+      data[i * 8 + 2] = pos[i * 3 + 2];
+      data[i * 8 + 3] = col[i * 3];
+      data[i * 8 + 4] = col[i * 3 + 1];
+      data[i * 8 + 5] = col[i * 3 + 2];
+      data[i * 8 + 6] = blm[i * 2];
+      data[i * 8 + 7] = blm[i * 2 + 1];
+    }
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+
+    // 树顶爱心：独立缓冲，绘制时不做场景旋转（公告板）
+    heartBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, heartBuf);
+    const hd = new Float32Array(N_HEART * 8);
+    for (let i = 0; i < N_HEART; i++) {
+      hd[i * 8 + 0] = hPos[i * 3];
+      hd[i * 8 + 1] = hPos[i * 3 + 1];
+      hd[i * 8 + 2] = hPos[i * 3 + 2];
+      hd[i * 8 + 3] = hCol[i * 3];
+      hd[i * 8 + 4] = hCol[i * 3 + 1];
+      hd[i * 8 + 5] = hCol[i * 3 + 2];
+      hd[i * 8 + 6] = hBlm[i * 2];
+      hd[i * 8 + 7] = hBlm[i * 2 + 1];
+    }
+    gl.bufferData(gl.ARRAY_BUFFER, hd, gl.STATIC_DRAW);
+
+    burstBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, burstBuf);
+    const bd = new Float32Array(BURST_N * 12);
+    for (let i = 0; i < BURST_N; i++) {
+      bd[i * 12 + 0] = bPos[i * 3];
+      bd[i * 12 + 1] = bPos[i * 3 + 1];
+      bd[i * 12 + 2] = bPos[i * 3 + 2];
+      bd[i * 12 + 3] = bVel[i * 3];
+      bd[i * 12 + 4] = bVel[i * 3 + 1];
+      bd[i * 12 + 5] = bVel[i * 3 + 2];
+      bd[i * 12 + 6] = bCol[i * 3];
+      bd[i * 12 + 7] = bCol[i * 3 + 1];
+      bd[i * 12 + 8] = bCol[i * 3 + 2];
+      bd[i * 12 + 9] = bMeta[i * 3];
+      bd[i * 12 + 10] = bMeta[i * 3 + 1];
+      bd[i * 12 + 11] = bMeta[i * 3 + 2];
+    }
+    gl.bufferData(gl.ARRAY_BUFFER, bd, gl.STATIC_DRAW);
+
+    // 凤凰：颜色静态、位置逐帧动态
+    phxColorBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, phxColorBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, pxCol, gl.STATIC_DRAW);
+
+    phxDynBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, phxDynBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, pxDyn, gl.DYNAMIC_DRAW);
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.clearColor(0, 0, 0, 0);
+  }
+
+  // ---------------- 尺寸 ----------------
+  let dpr = Math.min(2, window.devicePixelRatio || 1);
+  let cssW = 0, cssH = 0;
+
+  function resize() {
+    cssW = window.innerWidth;
+    cssH = window.innerHeight;
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    for (const c of [bg, glc, orbCv]) {
+      c.width = Math.floor(cssW * dpr);
+      c.height = Math.floor(cssH * dpr);
+      c.style.width = cssW + "px";
+      c.style.height = cssH + "px";
+    }
+    orb2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawBgStars();
+    if (gl) gl.viewport(0, 0, glc.width, glc.height);
+    if (dbgIdx >= 0 && textParts.length === 0) debugShowText(dbgIdx);   // 调试用：尺寸变化后补回那句话
+  }
+
+  // ---------------- 2D 兜底 ----------------
+  function fallback2D() {
+    const ctx = glc.getContext("2d");
+    const w = glc.width, h = glc.height;
+    const scale = h / 900;
+    const f0 = 567 / (CAM_DIST - CAM_HEIGHT * 0.25 + 6);
+    ctx.clearRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < N_POINTS; i += 4) {
+      const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+      const xz = x, zz = z;
+      const yp = y * Math.cos(PITCH) - zz * Math.sin(PITCH) - CAM_HEIGHT;
+      const zp = y * Math.sin(PITCH) + zz * Math.cos(PITCH) + CAM_DIST;
+      const f = 567 / zp;
+      const sx = w * 0.5 + xz * f * scale;
+      const sy = h * 0.5 - yp * f * scale;
+      if (sx < 0 || sx > w || sy < 0 || sy > h) continue;
+      ctx.fillStyle = "rgba(" + Math.floor(col[i * 3] * 255) + "," +
+                      Math.floor(col[i * 3 + 1] * 255) + "," +
+                      Math.floor(col[i * 3 + 2] * 255) + ",0.85)";
+      ctx.beginPath();
+      ctx.arc(sx, sy, 0.9 * scale, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  // ---------------- 主循环 ----------------
+  const seedEl = document.getElementById("seed");
+  let t0 = performance.now();
+
+  // 调试用：?t=6 冻结在动画第 6 秒（方便截图核对，正常打开时不存在该参数）
+  const FREEZE = parseFloat(new URLSearchParams(location.search).get("t"));
+  const isFrozen = isFinite(FREEZE);
+
+  if (isFrozen) {
+    t0 = performance.now();
+  }
+
+  function applyFreeze() {
+    if (!isFrozen) return;
+    const sig = document.getElementById("signature");
+    if (FREEZE >= 3.0) { sig.style.opacity = "1"; sig.style.animation = "none"; }
+  }
+
+  function projectSeed(y, angle) {
+    const cp = Math.cos(PITCH), cv = Math.sin(PITCH);
+    const yp = y * cp - 0 * cv - CAM_HEIGHT;
+    const zp = y * cv + 0 * cp + CAM_DIST;
+    const f = 567 / zp;
+    const sc = cssH / 900;
+    const sx = cssW * 0.5 + 0 * f * sc;
+    const sy = cssH * 0.5 - yp * f * sc;
+    return [sx, sy];
+  }
+
+  function bindSceneAttribs(buf) {
+    const stride = 8 * 4;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    const aPos = gl.getAttribLocation(sceneProg, "aPos");
+    const aColor = gl.getAttribLocation(sceneProg, "aColor");
+    const aBloom = gl.getAttribLocation(sceneProg, "aBloom");
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(aColor);
+    gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, stride, 12);
+    gl.enableVertexAttribArray(aBloom);
+    gl.vertexAttribPointer(aBloom, 2, gl.FLOAT, false, stride, 24);
+  }
+
+  function bindBurstAttribs() {
+    const stride = 12 * 4;
+    gl.bindBuffer(gl.ARRAY_BUFFER, burstBuf);
+    const locs = ["aPos", "aVel", "aColor", "aMeta"];
+    const sizes = [3, 3, 3, 3];
+    for (let i = 0; i < 4; i++) {
+      const l = gl.getAttribLocation(burstProg, locs[i]);
+      if (l < 0) continue;
+      gl.enableVertexAttribArray(l);
+      gl.vertexAttribPointer(l, sizes[i], gl.FLOAT, false, stride, i * 12);
+    }
+  }
+
+  function frame(now) {
+    const t = isFrozen ? FREEZE : (now - t0) / 1000;
+    const angle = t * 0.27;
+    curT = t;
+
+    // 定时器（文字化粒子、吸收、满心心跳等）
+    while (timers.length && timers[0].at <= t) {
+      const job = timers.shift();
+      job.fn();
+    }
+    updateFullness(t);
+    if (state.explodeAt >= 0 && t >= state.explodeAt && !state.textGone) {
+      state.textGone = true;
+      clearText();            // 整屏炸散时，最后那句也一起散掉
+    }
+    let dimScene = 1.0;
+    if (state.phoenixAt > 0) {
+      const din = Math.max(0, Math.min(1, (t - state.phoenixAt) / 0.6));
+      const dout = Math.max(0, Math.min(1, (t - (state.phoenixAt + 2.9)) / 1.1));
+      dimScene = 1 - 0.45 * din + 0.45 * dout;
+    }
+    // 画面上部挂着句子时，把树压暗一点，让粒子字抢住视觉
+    const dimTarget = textParts.length > 0 ? 0.36 : 1.0;
+    dimK += (dimTarget - dimK) * (isFrozen ? 1 : 0.10);
+    dimScene *= dimK;
+
+    if (gl && sceneProg) {
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.useProgram(sceneProg);
+      gl.uniform1f(uScene.t, t);
+      gl.uniform1f(uScene.a, angle);
+      gl.uniform2f(uScene.r, glc.width, glc.height);
+      gl.uniform1f(uScene.d, dpr);
+      gl.uniform1f(uScene.s, 1.0);
+      gl.uniform1f(uScene.cy, 0.0);
+      gl.uniform1f(uScene.dim, dimScene);
+
+      // 起爆：整棵树 / 地面光环 / 星空一起炸散
+      const blastK = state.explodeAt >= 0
+        ? Math.max(0, Math.min(1, (t - state.explodeAt) / 1.45)) : 0;
+      gl.uniform1f(uScene.blast, blastK);
+
+      if (blastK < 0.97) {
+        bindSceneAttribs(sceneBuf);
+        gl.drawArrays(gl.POINTS, 0, N_POINTS);
+      }
+
+      // 树顶爱心：正对镜头 + 按饱满度逐渐长出更多粒子 + 心跳缩放
+      if (state.explodeAt < 0 || t < state.explodeAt) {
+        gl.uniform1f(uScene.a, 0.0);
+        gl.uniform1f(uScene.s, heartScale);
+        gl.uniform1f(uScene.cy, HEART_Y);
+        bindSceneAttribs(heartBuf);
+        const cnt = Math.max(24, Math.floor(N_HEART * state.heartK));
+        gl.drawArrays(gl.POINTS, 0, cnt);
+      }
+
+      if (state.explodeAt >= 0 && t >= state.explodeAt) {
+        gl.useProgram(burstProg);
+        gl.uniform1f(uBurst.t, t - state.explodeAt);
+        gl.uniform1f(uBurst.a, angle);
+        gl.uniform2f(uBurst.r, glc.width, glc.height);
+        gl.uniform1f(uBurst.d, dpr);
+        bindBurstAttribs();
+        gl.drawArrays(gl.POINTS, 0, BURST_N);
+      }
+
+      // 鎏金凤凰：从整屏炸散的粒子里聚起来 → 旋转 → 展翼
+      drawPhoenixGL(t, angle);
+    }
+
+    // 光球 / 飞行粒子 / 凤凰（盖在树之上）
+    drawOverlay(t, angle);
+
+    // 种子粒子：从树底升到树顶
+    if (t < BLOOM_TRAVEL) {
+      const h = t / BLOOM_TRAVEL;
+      const y = 0.2 + h * (TREE_HEIGHT - 0.1);
+      const [sx, sy] = projectSeed(y, angle);
+      seedEl.style.opacity = "1";
+      seedEl.style.left = sx + "px";
+      seedEl.style.top = sy + "px";
+    } else if (seedEl.style.opacity === "1") {
+      seedEl.style.opacity = "0";
+    }
+
+    // 调试：?txt=i 时保证那句话一直挂在画面上（被 resize 清掉也能立刻补回来）
+    if (dbgIdx >= 0 && textParts.length === 0) debugShowText(dbgIdx);
+
+    requestAnimationFrame(frame);
+  }
+
+  // ---------------- 光球粒子团 / 祝福 / 爱心充能 / 凤凰 ----------------
+  // 五颗光球 = 五句话，点第 i 颗 → 画面顶部用粒子拼第 i 句
+  const BLESSINGS = [
+    "祝凤山天天得gen",
+    "得gen的都18岁",
+    "圣诞节想gen多少有多少",
+    "得gen的都是极品",
+    "都是大neinei"
+  ];
+
+  // 围绕树公转的光球：轨道半径 / 高度 / 相位 / 颜色 / 尺寸
+  const ORBS = [
+    { r: 6.2, y: 8.4, phi: 0.35, col: [255, 228, 160], s: 4.0 },
+    { r: 5.4, y: 4.6, phi: 2.15, col: [255, 150, 200], s: 4.4 },
+    { r: 6.9, y: 3.2, phi: 3.70, col: [150, 205, 255], s: 3.8 },
+    { r: 5.9, y: 10.2, phi: 1.30, col: [198, 165, 255], s: 4.2 },
+    { r: 6.6, y: 6.6, phi: 4.85, col: [135, 240, 185], s: 3.9 }
+  ];
+
+  const orbCv = document.getElementById("orb");
+  const orb2d = orbCv.getContext("2d");
+  const orbScreen = ORBS.map(() => ({ x: -9999, y: -9999, rad: 0, on: false }));
+
+  let heartScale = 1.0;      // 爱心心跳缩放
+  let dimK = 1.0;            // 场景压暗系数（有句子时让字更突出）
+  let curT = 0;              // 当前动画时刻
+  const timers = [];         // 帧驱动的定时器
+  const flyParts = [];       // 从文字化出来的、飞向爱心的粒子
+
+  const state = {
+    absorbed: 0,
+    heartK: 0.34,            // 爱心当前绘制比例（0.34 起步 → 1 满）
+    heartTarget: 0.34,
+    finaleAt: -1,            // 满心后开始心跳
+    explodeAt: -1,
+    phoenixAt: -1
+  };
+
+  // ---- 软点贴图（预渲染，避免每帧创建渐变） ----
+  function makeDot(r, g, b) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const x = c.getContext("2d");
+    const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, "rgba(255,255,255,1)");
+    gr.addColorStop(0.22, "rgba(" + r + "," + g + "," + b + ",0.96)");
+    gr.addColorStop(0.5, "rgba(" + r + "," + g + "," + b + ",0.34)");
+    gr.addColorStop(1, "rgba(" + r + "," + g + "," + b + ",0)");
+    x.fillStyle = gr;
+    x.fillRect(0, 0, 64, 64);
+    return c;
+  }
+  const DOTS = ORBS.map((o) => makeDot(o.col[0], o.col[1], o.col[2]));
+  const DOT_W = makeDot(255, 244, 220);
+  const PHX_DOTS = [makeDot(255, 255, 255), makeDot(255, 214, 232),
+                    makeDot(255, 146, 196), makeDot(238, 92, 168)];
+  const DOT_PK = makeDot(255, 168, 214);
+  const PHX_DOT_G = makeDot(255, 190, 110);
+
+  // 粒子字的"亮芯"贴图：比本体更白更实，用来压住外晕、把笔画提硬
+  const TINT = (c) => {          // 往白里提 42%，保住本色
+    const k = 0.42;
+    return [Math.round(c[0] + (255 - c[0]) * k),
+            Math.round(c[1] + (255 - c[1]) * k),
+            Math.round(c[2] + (255 - c[2]) * k)];
+  };
+  const CORE_DOTS = ORBS.map((o) => { const t = TINT(o.col); return makeDot(t[0], t[1], t[2]); });
+  const CORE_W = makeDot(255, 244, 252);
+
+  function dot(img, x, y, size, alpha) {
+    if (alpha <= 0.02 || size <= 0.4) return;
+    orb2d.globalAlpha = alpha > 1 ? 1 : alpha;
+    orb2d.drawImage(img, x - size * 0.5, y - size * 0.5, size, size);
+    orb2d.globalAlpha = 1;
+  }
+
+  // ---- 每颗光球由一团粒子组成：内核 + 向外发散的粒子 ----
+  const ORB_PARTS = ORBS.map(() => {
+    const arr = [];
+    for (let k = 0; k < 18; k++) {
+      arr.push({ core: true, a: Math.random() * TAU, rad: Math.pow(Math.random(), 0.7) * 0.85,
+                 w: (Math.random() < 0.5 ? -1 : 1) * (1.1 + Math.random() * 1.7),
+                 sz: 0.45 + Math.random() * 0.5 });
+    }
+    for (let k = 0; k < 22; k++) {
+      arr.push({ core: false, a: Math.random() * TAU, rad: 0,
+                 w: (Math.random() < 0.5 ? -1 : 1) * (0.7 + Math.random() * 1.1),
+                 ph: Math.random(), sz: 0.28 + Math.random() * 0.4 });
+    }
+    return arr;
+  });
+
+  function projectOrb(o, angle) {
+    const ca = Math.cos(angle), sa = Math.sin(angle);
+    const cp = Math.cos(PITCH), cv = Math.sin(PITCH);
+    // 窄屏（手机竖屏）把轨道半径收进画面，避免光球跑到屏幕外点不到
+    const narrow = Math.min(1, Math.max(0.42, cssW / 720));
+    const x = Math.cos(o.phi) * o.r * narrow, z = Math.sin(o.phi) * o.r * narrow;
+    const xz = x * ca - z * sa, zz = x * sa + z * ca;
+    const yp = o.y * cp - zz * cv - CAM_HEIGHT;
+    const zp = o.y * cv + zz * cp + CAM_DIST;
+    const f = 470 / zp;
+    const sc = cssH / 900;
+    return [cssW * 0.5 + xz * f * sc, cssH * 0.5 - yp * f * sc, f];
+  }
+
+  function heartScreenPos() {
+    const cp = Math.cos(PITCH), cv = Math.sin(PITCH);
+    const yp = HEART_Y * cp - CAM_HEIGHT;
+    const zp = HEART_Y * cv + CAM_DIST;
+    const f = 470 / zp;
+    const sc = cssH / 900;
+    return [cssW * 0.5, cssH * 0.5 - yp * f * sc];
+  }
+
+  function drawOrbs(t, angle) {
+    for (const s of orbScreen) s.on = false;
+    if (state.explodeAt >= 0 && t >= state.explodeAt) return;   // 起爆后光球一起散掉
+    if (t < STARS_AT - 0.25) return;
+
+    for (let i = 0; i < ORBS.length; i++) {
+      const o = ORBS[i];
+      const birth = STARS_AT + i * 0.16;
+      const k = Math.max(0, Math.min(1, (t - birth) / 0.9));
+      const fade = 1 - Math.pow(1 - k, 3);
+      if (fade <= 0.01) continue;
+
+      let gone = 0;
+      if (o.clickT) gone = Math.max(0, Math.min(1, (t - o.clickT - 0.20) / 1.05));
+      if (gone >= 1) continue;
+
+      const [cx0, cy00, f] = projectOrb(o, angle);
+      // 再兜一层：保证光球一定落在可点的画面内
+      const sx = Math.max(cssW * 0.11, Math.min(cssW * 0.89, cx0));
+      const sy = Math.max(cssH * 0.13, Math.min(cssH * 0.90, cy00));
+      const depth = Math.max(0.62, Math.min(1.5, f / 31));
+      const R = o.s * (cssH / 900) * depth * 1.95;   // 粒子团半径
+      const scatter = 1 + gone * 1.1;
+      const baseA = fade * (1 - gone) * (0.92 + 0.08 * Math.sin(t * 2.0 + i));
+
+      dot(DOTS[i], sx, sy, R * 4.6 * scatter, baseA * 0.40);   // 中心微光
+
+      const parts = ORB_PARTS[i];
+      for (let j = 0; j < parts.length; j++) {
+        const p = parts[j];
+        const ang = p.a + t * p.w;
+        let rad, a;
+        if (p.core) {
+          rad = p.rad * R * scatter;
+          a = baseA * 0.95;
+        } else {
+          const ph = (t * 0.42 + p.ph) % 1;
+          rad = (0.3 + ph * 2.0) * R * scatter;
+          a = baseA * 0.9 * (1 - ph);
+        }
+        dot(p.core ? DOT_W : DOTS[i],
+            sx + Math.cos(ang) * rad,
+            sy + Math.sin(ang) * rad * 0.88,
+            R * p.sz * (p.core ? 1.35 : 1.15), a);
+      }
+
+      orbScreen[i].x = sx;
+      orbScreen[i].y = sy;
+      orbScreen[i].rad = Math.max(26, R * 2.2);
+      orbScreen[i].on = true;
+    }
+  }
+
+  // ---- 文字粒子：点开光球 → 光球炸开，粒子飞到画面上部拼成那句话 ----
+  let mctx = null;
+
+  // 把一句话采样成点阵（坐标以文字中心为原点）
+  function textTargets(str, baseF, maxW) {
+    baseF = Math.max(18, baseF || 0);
+    maxW = Math.max(140, maxW || 0);
+    if (!mctx) {
+      const c = document.createElement("canvas");
+      c.width = c.height = 8;
+      mctx = c.getContext("2d");
+    }
+    const mk = (F) => "700 " + F + "px 'Microsoft YaHei UI','Microsoft YaHei','PingFang SC',sans-serif";
+    let F = baseF;
+    mctx.font = mk(F);
+    let w = mctx.measureText(str).width;
+    if (w > maxW) {
+      F = Math.max(16, Math.floor(F * maxW / w));
+      mctx.font = mk(F);
+      w = mctx.measureText(str).width;
+    }
+    const W = Math.ceil(w + F * 0.5), H = Math.ceil(F * 1.5);
+    if (W < 4 || H < 4) return { xy: [], n: 0 };
+    const off = document.createElement("canvas");
+    off.width = W; off.height = H;
+    const oc = off.getContext("2d");
+    oc.font = mk(F); oc.fillStyle = "#fff";
+    oc.textAlign = "center"; oc.textBaseline = "middle";
+    oc.fillText(str, W * 0.5, H * 0.5);
+    const d = oc.getImageData(0, 0, W, H).data;
+    const xy = [];
+    // 字越大取样步长越大，出来的点阵才通透、不糊成一块
+    const stp = Math.max(3, Math.round(F / 26));
+    for (let y = 1; y < H; y += stp) {
+      for (let x = 1; x < W; x += stp) {
+        if (d[(y * W + x) * 4 + 3] > 115) xy.push(x - W * 0.5, y - H * 0.5);
+      }
+    }
+    return { xy: xy, n: xy.length / 2 };
+  }
+
+  const tgtCache = [];
+  // 文字行的垂直位置：手机竖屏往上挪一点，别压到树顶
+  function txtRowY() { return cssW < 640 ? 0.205 : 0.255; }
+  function sentenceTargets(i) {
+    const key = Math.round(cssW) + "x" + Math.round(cssH);
+    const c = tgtCache[i];
+    if (c && c.key === key) return c.tg;
+    const tg = textTargets(BLESSINGS[i % BLESSINGS.length],
+                           Math.round(Math.min(cssH * 0.085, cssW * 0.075)),
+                           cssW * 0.86);
+    tgtCache[i] = { key: key, tg: tg };
+    return tg;
+  }
+
+  const textParts = [];        // 2D 文字粒子
+  let textGen = 0;
+
+  // 从 (sx,sy) 炸开 → 沿弧线飞进文字
+  function spawnText(tg, cx, cy, sx, sy, spr, core, spread, cap, arcK) {
+    const n = tg.n;
+    if (n < 1) return;
+    const cnt = Math.min(cap, n);
+    const stepN = n / cnt;
+    const now = curT;
+    for (let k = 0; k < cnt; k++) {
+      const i = Math.min(n - 1, Math.floor(k * stepN));
+      const tx = cx + tg.xy[i * 2] + (Math.random() * 2 - 1) * 1.0;
+      const ty = cy + tg.xy[i * 2 + 1] + (Math.random() * 2 - 1) * 1.0;
+      const a = Math.random() * TAU, r = Math.random() * spread;
+      const x0 = sx + Math.cos(a) * r, y0 = sy + Math.sin(a) * r * 0.9;
+      const mx = (x0 + tx) * 0.5 + (Math.random() * 2 - 1) * arcK;
+      const my = (y0 + ty) * 0.5 - arcK * 0.55 + (Math.random() * 2 - 1) * arcK * 0.5;
+      textParts.push({
+        x0: x0, y0: y0, tx: tx, ty: ty,
+        cx: 2 * mx - (x0 + tx) * 0.5, cy: 2 * my - (y0 + ty) * 0.5,
+        t0: now, delay: Math.random() * 0.42, dur: 1.0 + Math.random() * 0.5,
+        sz: 5.0 + Math.random() * 2.8, al: 0.78 + Math.random() * 0.22,
+        ph: Math.random() * TAU, die: -1,
+        spr: Math.random() < 0.15 ? DOT_W : spr,
+        core: Math.random() < 0.30 ? DOT_W : core
+      });
+    }
+  }
+
+  // 换句时把上一段彻底抹掉（不留任何残留）
+  function clearText(instant) {
+    if (instant) { textParts.length = 0; return; }
+    const now = curT;
+    for (const p of textParts) if (p.die < 0) p.die = now;
+  }
+
+  function drawTextFx(t) {
+    for (let i = textParts.length - 1; i >= 0; i--) {
+      const p = textParts[i];
+      if (p.die > 0 && t > p.die + 0.22) { textParts.splice(i, 1); continue; }
+      const lt = (t - p.t0 - p.delay) / p.dur;
+      if (lt <= 0) continue;
+      let x, y, al;
+      if (lt < 1) {
+        const e = lt * lt * (3 - 2 * lt);
+        const u = 1 - e;
+        x = u * u * p.x0 + 2 * u * e * p.cx + e * e * p.tx;
+        y = u * u * p.y0 + 2 * u * e * p.cy + e * e * p.ty;
+        al = p.al * Math.min(1, lt * 3.0);
+      } else {
+        x = p.tx + Math.sin(t * 1.7 + p.ph) * 0.85;
+        y = p.ty + Math.cos(t * 2.1 + p.ph) * 0.85;
+        al = p.al * (0.94 + 0.10 * Math.sin(t * 2.6 + p.ph));
+      }
+      if (p.die > 0) {
+        const d = Math.min(1, (t - p.die) / 0.22);
+        al *= 1 - d;
+        y -= 22 * d;
+      }
+      // 两遍叠画：外层柔光晕 + 内层亮芯 → 笔画更实、边缘更清楚
+      dot(p.spr, x, y, p.sz * 1.8, al * 0.26);
+      dot(p.core, x, y, p.sz * 0.92, Math.min(1, al * 1.02));
+    }
+  }
+
+  // 同时放一小股粒子飞进树顶爱心，让爱心越点越满
+  function spawnHeartStream(sx, sy, idx) {
+    const [hx, hy] = heartScreenPos();
+    const now = curT;
+    for (let k = 0; k < 90; k++) {
+      const a = Math.random() * TAU, r = Math.random() * 30;
+      const p = {
+        x: sx + Math.cos(a) * r, y: sy + Math.sin(a) * r * 0.9,
+        tx: hx + (Math.random() * 2 - 1) * 26,
+        ty: hy + (Math.random() * 2 - 1) * 26,
+        size: 2.6 + Math.random() * 3.0,
+        t0: now, delay: Math.random() * 0.25, dur: 0.85 + Math.random() * 0.45
+      };
+      const mx = (p.x + p.tx) * 0.5 + (Math.random() * 2 - 1) * 90;
+      const my = (p.y + p.ty) * 0.5 + (Math.random() * 2 - 1) * 90;
+      p.cx = 2 * mx - (p.x + p.tx) * 0.5;
+      p.cy = 2 * my - (p.y + p.ty) * 0.5;
+      flyParts.push(p);
+    }
+    timers.push({ at: now + 1.35, fn: () => absorbOne(idx) });
+  }
+
+  function absorbOne(i) {
+    const total = ORBS.length;
+    state.absorbed = Math.min(total, state.absorbed + 1);
+    state.heartTarget = 0.34 + (1 - 0.34) * (state.absorbed / total);
+    if (heartScale < 1.14) heartScale = 1.14;
+    if (state.absorbed >= total && state.finaleAt < 0 && state.explodeAt < 0) {
+      state.finaleAt = curT + 0.55;
+      state.explodeAt = state.finaleAt + 4 * 0.62 + 0.15;   // 跳 4 下后炸开
+      state.phoenixAt = state.explodeAt + 0.2;
+    }
+  }
+
+  // 终章：凤凰再炸开 → 粒子在画面中间聚成「凤山mm」
+  let finaleBuilt = false;
+
+  // fromDyn=true 用凤凰当前帧的真实位置当起点；false 用凤凰标准形当起点（冻结跳帧兜底）
+  function buildFinaleText(fromDyn) {
+    if (finaleBuilt) return;
+    finaleBuilt = true;
+    const tg = textTargets("凤山mm", Math.round(Math.min(cssH * 0.20, cssW * 0.13)), cssW * 0.86);
+    if (tg.n < 1) return;
+    const cx0 = cssW * 0.5, cy0 = cssH * 0.44;
+    const scx = cssW * 0.5, scy = cssH * 0.48;
+    const k = (cssH * 0.74) / boxH;
+    const stride = Math.max(1, Math.floor(PXN / 3000));
+    // 起点时间锚在时间轴上（不是"当前帧"），冻结时间轴截图也能落到正确阶段
+    const st = (state.explodeAt >= 0)
+      ? state.explodeAt + PX_T.spin1
+      : curT;
+    for (let j = 0; j < PXN; j += stride) {
+      let sx, sy;
+      if (fromDyn) {
+        sx = pxDyn[j * 4]; sy = pxDyn[j * 4 + 1];
+      } else {
+        sx = scx + (pxX[j] - boxCX) * k * 0.95;
+        sy = scy + (pxY[j] - boxCY) * k * 0.95;
+      }
+      if (!isFinite(sx) || !isFinite(sy)) continue;
+      const i = Math.floor(Math.random() * tg.n);
+      const tx = cx0 + tg.xy[i * 2] + (Math.random() * 2 - 1) * 1.8;
+      const ty = cy0 + tg.xy[i * 2 + 1] + (Math.random() * 2 - 1) * 1.8;
+      let dx = sx - cx0, dy = sy - cy0;
+      const dl = Math.hypot(dx, dy) || 1;
+      const mx = (sx + tx) * 0.5 + dx / dl * 210 + (Math.random() * 2 - 1) * 60;
+      const my = (sy + ty) * 0.5 + dy / dl * 210 - 130;
+      textParts.push({
+        x0: sx, y0: sy, tx: tx, ty: ty,
+        cx: 2 * mx - (sx + tx) * 0.5, cy: 2 * my - (sy + ty) * 0.5,
+        t0: st, delay: Math.random() * 0.30, dur: 1.15 + Math.random() * 0.55,
+        sz: 4.4 + Math.random() * 2.4, al: 0.78 + Math.random() * 0.22,
+        ph: Math.random() * TAU, die: -1,
+        spr: Math.random() < 0.22 ? DOT_W : DOT_PK,
+        core: Math.random() < 0.35 ? DOT_W : CORE_W
+      });
+    }
+  }
+
+  function drawFly(t) {
+    for (let i = flyParts.length - 1; i >= 0; i--) {
+      const p = flyParts[i];
+      const lt = (t - p.t0 - p.delay) / p.dur;
+      if (lt < 0) continue;
+      if (lt >= 1) { flyParts.splice(i, 1); continue; }
+      const e = lt * lt * (3 - 2 * lt);
+      const u = 1 - e;
+      const x = u * u * p.x + 2 * u * e * p.cx + e * e * p.tx;
+      const y = u * u * p.y + 2 * u * e * p.cy + e * e * p.ty;
+      dot(DOT_W, x, y, p.size * (1.05 - 0.35 * lt), 0.85);
+    }
+  }
+
+  // ---- 爱心饱满度 / 心跳 / 起爆 ----
+  function updateFullness(t) {
+    state.heartK += (state.heartTarget - state.heartK) * 0.06;
+    if (state.explodeAt >= 0 && t >= state.explodeAt) return;
+
+    if (state.finaleAt > 0) {
+      const ft = t - state.finaleAt;
+      if (ft > 0) {
+        const cyc = 0.62;
+        const local = ft % cyc;
+        let pulse = 0;
+        if (ft < cyc * 4) {
+          pulse = local < 0.12 ? local / 0.12 : Math.max(0, 1 - (local - 0.12) / 0.30);
+          pulse *= 1 - 0.12 * Math.floor(ft / cyc);
+        }
+        heartScale = 1 + 0.18 * pulse;
+      }
+    } else {
+      heartScale += (1 - heartScale) * 0.10;
+    }
+  }
+
+  function drawOverlay(t, angle) {
+    orb2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+    orb2d.clearRect(0, 0, cssW, cssH);
+    orb2d.globalCompositeOperation = "lighter";
+    drawOrbs(t, angle);
+    drawTextFx(t);
+    drawFly(t);
+    drawFlash(t);
+    orb2d.globalAlpha = 1;
+    orb2d.globalCompositeOperation = "source-over";
+  }
+
+  // 起爆闪光 + 冲击环
+  function drawFlash(t) {
+    if (state.explodeAt < 0) return;
+    const age = t - state.explodeAt;
+    if (age < 0) return;
+    const [hx, hy] = heartScreenPos();
+    if (age < 0.55) {
+      const k = 1 - age / 0.55;
+      dot(PHX_DOTS[0], hx, hy, cssH * 1.25 * (0.7 + 0.6 * (1 - k)), 0.60 * k * k);
+    }
+    if (age < 1.6) {
+      const k = age / 1.6;
+      orb2d.globalAlpha = (1 - k) * 0.55;
+      orb2d.strokeStyle = "rgba(255,196,228,1)";
+      orb2d.lineWidth = 2.6 * (1 - k) + 0.5;
+      orb2d.beginPath();
+      orb2d.arc(hx, hy, cssH * (0.08 + k * 0.92), 0, TAU);
+      orb2d.stroke();
+      orb2d.globalAlpha = 1;
+    }
+  }
+
+  function hitOrb(px, py) {
+    let best = -1, bestD = 1e9;
+    for (let i = 0; i < orbScreen.length; i++) {
+      const s = orbScreen[i];
+      if (!s.on || ORBS[i].clickT) continue;
+      const d = Math.hypot(s.x - px, s.y - py);
+      if (d < s.rad && d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  orbCv.addEventListener("click", (ev) => {
+    const idx = hitOrb(ev.clientX, ev.clientY);
+    if (idx < 0) return;
+    ev.stopPropagation();
+    const o = ORBS[idx];
+    const at = curT;
+    o.clickT = at;
+    const sx = orbScreen[idx].x, sy = orbScreen[idx].y;
+    o.lastX = sx; o.lastY = sy;
+
+    clearText();                       // 上一句就地散掉，不留残留
+    textGen++;
+    spawnText(sentenceTargets(idx), cssW * 0.5, cssH * txtRowY(),
+              sx, sy, DOTS[idx], CORE_DOTS[idx],
+              Math.max(20, orbScreen[idx].rad * 0.8), 2200, 115);
+    spawnHeartStream(sx, sy, idx);
+  });
+  orbCv.addEventListener("mousemove", (ev) => {
+    orbCv.style.cursor = hitOrb(ev.clientX, ev.clientY) >= 0 ? "pointer" : "default";
+  });
+
+  window.addEventListener("resize", () => {
+    const ow = cssW, oh = cssH;
+    resize();
+    if (Math.abs(ow - cssW) < 2 && Math.abs(oh - cssH) < 2) return;  // 尺寸没真变，别动文字
+    tgtCache.length = 0;
+    if (!finaleBuilt) clearText(true);
+  });
+
+  // 调试：?t=6&f=1 直接跳到满心/心跳/凤凰阶段，方便截图核对
+  if (new URLSearchParams(location.search).get("f") === "1") {
+    ORBS.forEach((o) => { o.clickT = -999; });
+    state.absorbed = ORBS.length;
+    state.heartK = 1;
+    state.heartTarget = 1;
+    state.finaleAt = 3.2;
+    state.explodeAt = 3.2 + 4 * 0.62 + 0.15;
+    state.phoenixAt = state.explodeAt + 0.2;
+  }
+
+  // 调试：?txt=2 直接看第 2 句拼好的样子（配合 ?t= 冻结截图）
+  function debugShowText(i) {
+    const tg = sentenceTargets(i);
+    const cx = cssW * 0.5, cy = cssH * txtRowY();
+    const n = tg.n, cnt = Math.min(2200, n), stepN = n / cnt;
+    for (let k = 0; k < cnt; k++) {
+      const j = Math.min(n - 1, Math.floor(k * stepN));
+      textParts.push({
+        x0: cx + tg.xy[j * 2], y0: cy + tg.xy[j * 2 + 1],
+        tx: cx + tg.xy[j * 2] + (Math.random() * 2 - 1) * 1.0,
+        ty: cy + tg.xy[j * 2 + 1] + (Math.random() * 2 - 1) * 1.0,
+        cx: 0, cy: 0, t0: curT - 3.2, delay: 0, dur: 1,
+        sz: 5.0 + Math.random() * 2.8, al: 0.78 + Math.random() * 0.22,
+        ph: Math.random() * TAU, die: -1,
+        spr: Math.random() < 0.15 ? DOT_W : DOTS[i],
+        core: Math.random() < 0.30 ? DOT_W : CORE_DOTS[i]
+      });
+    }
+  }
+  const dbgTxt = new URLSearchParams(location.search).get("txt");
+  const dbgIdx = (dbgTxt === null || dbgTxt === "") ? -1
+    : Math.max(0, Math.min(BLESSINGS.length - 1, parseInt(dbgTxt, 10) || 0));
+
+
+  applyFreeze();
+  resize();
+  if (dbgIdx >= 0) debugShowText(dbgIdx);   // 调试：首帧就把那句挂上，截图可靠
+  if (gl) {
+    initGL();
+  } else {
+    fallback2D();
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
+
+
+
+
+
+
