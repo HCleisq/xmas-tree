@@ -876,7 +876,7 @@
     orb2d.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawBgStars();
     if (gl) gl.viewport(0, 0, glc.width, glc.height);
-    if (dbgIdx >= 0 && textParts.length === 0) debugShowText(dbgIdx);   // 调试用：尺寸变化后补回那句话
+    if (dbgIdx >= 0 && !isFinite(DBG_CLR) && textParts.length === 0) debugShowText(dbgIdx);   // 调试用：尺寸变化后补回那句话
   }
 
   // ---------------- 2D 兜底 ----------------
@@ -965,6 +965,12 @@
     const t = isFrozen ? FREEZE : (now - t0) / 1000;
     const angle = t * 0.27;
     curT = t;
+    if (isFinite(DBG_CLR) && t >= DBG_CLR && !dbgClrDone) {
+      dbgClrDone = true;
+      const saveT = curT; curT = DBG_CLR;   // 调试：让粒子从 clr 时刻起飞，便于冻结截图
+      clearText();
+      curT = saveT;
+    }
 
     // 定时器（文字化粒子、吸收、满心心跳等）
     while (timers.length && timers[0].at <= t) {
@@ -974,7 +980,7 @@
     updateFullness(t);
     if (state.explodeAt >= 0 && t >= state.explodeAt && !state.textGone) {
       state.textGone = true;
-      clearText();            // 整屏炸散时，最后那句也一起散掉
+      clearText(true);        // 整屏炸散时，最后那句直接随爆散掉（不再飞向爱心）
     }
     let dimScene = 1.0;
     if (state.phoenixAt > 0) {
@@ -1049,7 +1055,7 @@
     }
 
     // 调试：?txt=i 时保证那句话一直挂在画面上（被 resize 清掉也能立刻补回来）
-    if (dbgIdx >= 0 && textParts.length === 0) debugShowText(dbgIdx);
+    if (dbgIdx >= 0 && !isFinite(DBG_CLR) && textParts.length === 0) debugShowText(dbgIdx);
 
     requestAnimationFrame(frame);
   }
@@ -1308,11 +1314,45 @@
     }
   }
 
-  // 换句时把上一段彻底抹掉（不留任何残留）
+  // 换句时：旧句就地散成粒子，这些粒子飞向树顶爱心，把爱心填满
   function clearText(instant) {
     if (instant) { textParts.length = 0; return; }
     const now = curT;
-    for (const p of textParts) if (p.die < 0) p.die = now;
+    const [hx, hy] = heartScreenPos();
+    const n = textParts.length;
+    const step = Math.max(1, Math.floor(n / 650));    // 抽样，别把几万粒全飞出去
+    for (let i = 0; i < n; i++) {
+      const p = textParts[i];
+      if (p.die > 0) continue;
+      p.die = now;                                     // 原字立刻开始消散
+      if (i % step) continue;
+
+      // 取这一粒此刻的真实位置
+      const lt = (now - p.t0 - p.delay) / p.dur;
+      let x, y;
+      if (lt <= 0) { x = p.x0; y = p.y0; }
+      else if (lt < 1) {
+        const e = lt * lt * (3 - 2 * lt), u = 1 - e;
+        x = u * u * p.x0 + 2 * u * e * p.cx + e * e * p.tx;
+        y = u * u * p.y0 + 2 * u * e * p.cy + e * e * p.ty;
+      } else { x = p.tx; y = p.ty; }
+
+      const tx = hx + (Math.random() * 2 - 1) * 26;
+      const ty = hy + (Math.random() * 2 - 1) * 26;
+      const sweep = Math.max(0, Math.min(1, x / Math.max(1, cssW))) * 0.45;
+      const fp = {
+        x: x, y: y, tx: tx, ty: ty,
+        size: 2.4 + Math.random() * 2.8,
+        t0: now, delay: sweep + Math.random() * 0.18,
+        dur: 0.95 + Math.random() * 0.5,
+        img: p.spr                                  // 保留原句颜色
+      };
+      const mx = (x + tx) * 0.5 + (Math.random() * 2 - 1) * 120;
+      const my = (y + ty) * 0.5 - 70 + (Math.random() * 2 - 1) * 90;
+      fp.cx = 2 * mx - (x + tx) * 0.5;
+      fp.cy = 2 * my - (y + ty) * 0.5;
+      flyParts.push(fp);
+    }
   }
 
   function drawTextFx(t) {
@@ -1433,7 +1473,7 @@
       const u = 1 - e;
       const x = u * u * p.x + 2 * u * e * p.cx + e * e * p.tx;
       const y = u * u * p.y + 2 * u * e * p.cy + e * e * p.ty;
-      dot(DOT_W, x, y, p.size * (1.05 - 0.35 * lt), 0.85);
+      dot(p.img || DOT_W, x, y, p.size * (1.05 - 0.35 * lt), 0.85);
     }
   }
 
@@ -1504,17 +1544,15 @@
     return best;
   }
 
-  orbCv.addEventListener("click", (ev) => {
-    const idx = hitOrb(ev.clientX, ev.clientY);
+  function doOrbClick(idx) {
     if (idx < 0) return;
-    ev.stopPropagation();
     const o = ORBS[idx];
     const at = curT;
     o.clickT = at;
     const sx = orbScreen[idx].x, sy = orbScreen[idx].y;
     o.lastX = sx; o.lastY = sy;
 
-    clearText();                       // 上一句就地散掉，不留残留
+    clearText();                       // 上一句就地散成粒子，飞进树顶爱心
     textGen++;
     // 文案顺序固定：第几次点击就出第几句；颜色仍取被点光球的本色
     const si = Math.min(state.textSeq, BLESSINGS.length - 1);
@@ -1523,6 +1561,13 @@
               sx, sy, DOTS[idx], CORE_DOTS[idx],
               Math.max(20, orbScreen[idx].rad * 0.8), 2200, 115);
     spawnHeartStream(sx, sy, idx);
+  }
+
+  orbCv.addEventListener("click", (ev) => {
+    const idx = hitOrb(ev.clientX, ev.clientY);
+    if (idx < 0) return;
+    ev.stopPropagation();
+    doOrbClick(idx);
   });
   orbCv.addEventListener("mousemove", (ev) => {
     orbCv.style.cursor = hitOrb(ev.clientX, ev.clientY) >= 0 ? "pointer" : "default";
@@ -1569,6 +1614,9 @@
   const dbgTxt = new URLSearchParams(location.search).get("txt");
   const dbgIdx = (dbgTxt === null || dbgTxt === "") ? -1
     : Math.max(0, Math.min(BLESSINGS.length - 1, parseInt(dbgTxt, 10) || 0));
+  // 调试：?clr=<秒> 在指定时刻把当前句子散成粒子（配合 ?txt= 与 ?t= 冻结截图）
+  const DBG_CLR = parseFloat(new URLSearchParams(location.search).get("clr"));
+  let dbgClrDone = false;
 
 
   applyFreeze();
