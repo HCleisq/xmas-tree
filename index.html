@@ -1055,9 +1055,9 @@
   }
 
   // ---------------- 光球粒子团 / 祝福 / 爱心充能 / 凤凰 ----------------
-  // 五颗光球 = 五句话，点第 i 颗 → 画面顶部用粒子拼第 i 句
+  // 五颗光球 = 五句话：按点击先后顺序出句（第1次点出第1句，第2次点出第2句…），与点哪颗无关
   const BLESSINGS = [
-    "祝凤山天天得gen",
+    "祝yys天天得gen",
     "得gen的都18岁",
     "圣诞节想gen多少有多少",
     "得gen的都是极品",
@@ -1085,6 +1085,7 @@
 
   const state = {
     absorbed: 0,
+    textSeq: 0,              // 已经点出第几句（决定下一句用文案里的第几句）
     heartK: 0.34,            // 爱心当前绘制比例（0.34 起步 → 1 满）
     heartTarget: 0.34,
     finaleAt: -1,            // 满心后开始心跳
@@ -1384,7 +1385,7 @@
   function buildFinaleText(fromDyn) {
     if (finaleBuilt) return;
     finaleBuilt = true;
-    const tg = textTargets("凤山mm", Math.round(Math.min(cssH * 0.20, cssW * 0.13)), cssW * 0.86);
+    const tg = textTargets("YYSmm", Math.round(Math.min(cssH * 0.20, cssW * 0.13)), cssW * 0.86);
     if (tg.n < 1) return;
     const cx0 = cssW * 0.5, cy0 = cssH * 0.44;
     const scx = cssW * 0.5, scy = cssH * 0.48;
@@ -1515,7 +1516,10 @@
 
     clearText();                       // 上一句就地散掉，不留残留
     textGen++;
-    spawnText(sentenceTargets(idx), cssW * 0.5, cssH * txtRowY(),
+    // 文案顺序固定：第几次点击就出第几句；颜色仍取被点光球的本色
+    const si = Math.min(state.textSeq, BLESSINGS.length - 1);
+    state.textSeq++;
+    spawnText(sentenceTargets(si), cssW * 0.5, cssH * txtRowY(),
               sx, sy, DOTS[idx], CORE_DOTS[idx],
               Math.max(20, orbScreen[idx].rad * 0.8), 2200, 115);
     spawnHeartStream(sx, sy, idx);
