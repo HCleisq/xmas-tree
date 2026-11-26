@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>QQ独家制造</title>
+<title>圣诞快乐</title>
 <style>
   html, body { margin:0; height:100%; background:#000; overflow:hidden; }
   #stage {
@@ -14,28 +14,6 @@
   #bg, #gl { position:absolute; inset:0; width:100%; height:100%; display:block; }
   #gl { pointer-events:none; }
 
-  /* 唯一的文字：QQ独家制造 */
-  #signature {
-    position:absolute; left:4.2%; top:31%;
-    color:#fff; white-space:nowrap; user-select:none; pointer-events:none;
-    font-family:'Microsoft YaHei UI','Microsoft YaHei','PingFang SC',system-ui,sans-serif;
-    font-weight:700;
-    font-size:clamp(22px, 2.7vw, 46px);
-    letter-spacing:.10em;
-    opacity:0;
-    animation:sigIn 2.2s 2.3s ease-out forwards;
-    text-shadow:0 0 14px rgba(255,255,255,.62), 0 0 40px rgba(255,170,220,.42);
-  }
-  @keyframes sigIn { from{opacity:0; transform:translateY(16px) scale(.95);} to{opacity:1; transform:none;} }
-
-  /* 手机竖屏：签名挪到左上角、缩小，避免压在树上 */
-  @media (max-width: 640px) {
-    #signature {
-      left:6%; top:5.5%;
-      font-size:clamp(16px, 5.2vw, 24px);
-      letter-spacing:.06em;
-    }
-  }
 
   /* 环绕公转的彩色光点（可点击） */
   #orb { position:absolute; inset:0; width:100%; height:100%; display:block; }
@@ -56,7 +34,6 @@
   <canvas id="gl"></canvas>
   <canvas id="orb"></canvas>
   <div id="seed"></div>
-  <div id="signature">QQ独家制造</div>
 </div>
 
 <script>
@@ -919,8 +896,6 @@
 
   function applyFreeze() {
     if (!isFrozen) return;
-    const sig = document.getElementById("signature");
-    if (FREEZE >= 3.0) { sig.style.opacity = "1"; sig.style.animation = "none"; }
   }
 
   function projectSeed(y, angle) {
@@ -965,6 +940,7 @@
     const t = isFrozen ? FREEZE : (now - t0) / 1000;
     const angle = t * 0.27;
     curT = t;
+    autoAdvance(t);          // 自动逐个化字
     if (isFinite(DBG_CLR) && t >= DBG_CLR && !dbgClrDone) {
       dbgClrDone = true;
       const saveT = curT; curT = DBG_CLR;   // 调试：让粒子从 clr 时刻起飞，便于冻结截图
@@ -1061,13 +1037,12 @@
   }
 
   // ---------------- 光球粒子团 / 祝福 / 爱心充能 / 凤凰 ----------------
-  // 五颗光球 = 五句话：按点击先后顺序出句（第1次点出第1句，第2次点出第2句…），与点哪颗无关
+  // 四颗光球 = 四句话：自动依次化字（第1颗出第1句，第2颗出第2句…），不再需要点击
   const BLESSINGS = [
     "祝yys天天得gen",
     "得gen的都18岁",
     "圣诞节想gen多少有多少",
-    "得gen的都是极品",
-    "都是大neinei"
+    "得gen的都是极品"
   ];
 
   // 围绕树公转的光球：轨道半径 / 高度 / 相位 / 颜色 / 尺寸
@@ -1075,8 +1050,7 @@
     { r: 6.2, y: 8.4, phi: 0.35, col: [255, 228, 160], s: 4.0 },
     { r: 5.4, y: 4.6, phi: 2.15, col: [255, 150, 200], s: 4.4 },
     { r: 6.9, y: 3.2, phi: 3.70, col: [150, 205, 255], s: 3.8 },
-    { r: 5.9, y: 10.2, phi: 1.30, col: [198, 165, 255], s: 4.2 },
-    { r: 6.6, y: 6.6, phi: 4.85, col: [135, 240, 185], s: 3.9 }
+    { r: 5.9, y: 10.2, phi: 1.30, col: [198, 165, 255], s: 4.2 }
   ];
 
   const orbCv = document.getElementById("orb");
@@ -1129,6 +1103,12 @@
   };
   const CORE_DOTS = ORBS.map((o) => { const t = TINT(o.col); return makeDot(t[0], t[1], t[2]); });
   const CORE_W = makeDot(255, 244, 252);
+
+  // 七彩贴图（终章"QQ出品，必属精品" + 满屏七彩使用）
+  const RB_COLS = [[255, 96, 116], [255, 164, 84], [255, 228, 124], [146, 238, 152],
+                   [108, 214, 255], [150, 158, 255], [236, 140, 255]];
+  const RAINBOW = RB_COLS.map((c) => makeDot(c[0], c[1], c[2]));
+  const RAINBOW_CORE = RB_COLS.map((c) => { const t = TINT(c); return makeDot(t[0], t[1], t[2]); });
 
   function dot(img, x, y, size, alpha) {
     if (alpha <= 0.02 || size <= 0.4) return;
@@ -1305,7 +1285,7 @@
       textParts.push({
         x0: x0, y0: y0, tx: tx, ty: ty,
         cx: 2 * mx - (x0 + tx) * 0.5, cy: 2 * my - (y0 + ty) * 0.5,
-        t0: now, delay: Math.random() * 0.42, dur: 1.0 + Math.random() * 0.5,
+        t0: now, delay: Math.random() * 0.25, dur: 0.95 + Math.random() * 0.35,
         sz: 5.0 + Math.random() * 2.8, al: 0.78 + Math.random() * 0.22,
         ph: Math.random() * TAU, die: -1,
         spr: Math.random() < 0.15 ? DOT_W : spr,
@@ -1418,14 +1398,15 @@
     }
   }
 
-  // 终章：凤凰再炸开 → 粒子在画面中间聚成「凤山mm」
+  // 终章：凤凰再炸开 → 七彩粒子聚成「QQ出品，必属精品」，同时满屏七彩
   let finaleBuilt = false;
 
   // fromDyn=true 用凤凰当前帧的真实位置当起点；false 用凤凰标准形当起点（冻结跳帧兜底）
   function buildFinaleText(fromDyn) {
     if (finaleBuilt) return;
     finaleBuilt = true;
-    const tg = textTargets("YYSmm", Math.round(Math.min(cssH * 0.20, cssW * 0.13)), cssW * 0.86);
+    const tg = textTargets("QQ出品，必属精品",
+      Math.round(Math.min(cssH * 0.155, cssW * 0.095)), cssW * 0.88);
     if (tg.n < 1) return;
     const cx0 = cssW * 0.5, cy0 = cssH * 0.44;
     const scx = cssW * 0.5, scy = cssH * 0.48;
@@ -1451,14 +1432,34 @@
       const dl = Math.hypot(dx, dy) || 1;
       const mx = (sx + tx) * 0.5 + dx / dl * 210 + (Math.random() * 2 - 1) * 60;
       const my = (sy + ty) * 0.5 + dy / dl * 210 - 130;
+      const ri = Math.floor(Math.random() * 7);
       textParts.push({
         x0: sx, y0: sy, tx: tx, ty: ty,
         cx: 2 * mx - (sx + tx) * 0.5, cy: 2 * my - (sy + ty) * 0.5,
         t0: st, delay: Math.random() * 0.30, dur: 1.15 + Math.random() * 0.55,
         sz: 4.4 + Math.random() * 2.4, al: 0.78 + Math.random() * 0.22,
         ph: Math.random() * TAU, die: -1,
-        spr: Math.random() < 0.22 ? DOT_W : DOT_PK,
-        core: Math.random() < 0.35 ? DOT_W : CORE_W
+        spr: Math.random() < 0.18 ? DOT_W : RAINBOW[ri],
+        core: Math.random() < 0.25 ? CORE_W : RAINBOW_CORE[ri]
+      });
+    }
+
+    // 满屏七彩：把彩色粒子铺满画面（错峰亮起，之后轻微呼吸）
+    const FILL_N = 520;
+    for (let f = 0; f < FILL_N; f++) {
+      const x = Math.random() * cssW;
+      const y = Math.random() * cssH;
+      const ri = Math.floor(Math.random() * 7);
+      const rr = 20 + Math.random() * 55;
+      const ang = Math.random() * TAU;
+      textParts.push({
+        x0: x + Math.cos(ang) * rr, y0: y + Math.sin(ang) * rr,
+        tx: x, ty: y,
+        cx: x + Math.cos(ang) * rr * 0.35, cy: y + Math.sin(ang) * rr * 0.35,
+        t0: st + 0.45 + Math.random() * 1.5, delay: 0, dur: 0.6 + Math.random() * 0.5,
+        sz: 2.4 + Math.random() * 4.4, al: 0.18 + Math.random() * 0.42,
+        ph: Math.random() * TAU, die: -1,
+        spr: RAINBOW[ri], core: RAINBOW_CORE[ri]
       });
     }
   }
@@ -1563,15 +1564,17 @@
     spawnHeartStream(sx, sy, idx);
   }
 
-  orbCv.addEventListener("click", (ev) => {
-    const idx = hitOrb(ev.clientX, ev.clientY);
-    if (idx < 0) return;
-    ev.stopPropagation();
-    doOrbClick(idx);
-  });
-  orbCv.addEventListener("mousemove", (ev) => {
-    orbCv.style.cursor = hitOrb(ev.clientX, ev.clientY) >= 0 ? "pointer" : "default";
-  });
+  // 全自动播放：从光球出现的时刻起，每隔 AUTO_GAP 秒由一颗光球自己化字，不再需要点击
+  const AUTO_START = STARS_AT + 1.1;
+  const AUTO_GAP = 3.0;
+  let autoIdx = 0;
+
+  function autoAdvance(t) {
+    while (autoIdx < ORBS.length && t >= AUTO_START + autoIdx * AUTO_GAP) {
+      doOrbClick(autoIdx);
+      autoIdx++;
+    }
+  }
 
   window.addEventListener("resize", () => {
     const ow = cssW, oh = cssH;
@@ -1584,6 +1587,7 @@
   // 调试：?t=6&f=1 直接跳到满心/心跳/凤凰阶段，方便截图核对
   if (new URLSearchParams(location.search).get("f") === "1") {
     ORBS.forEach((o) => { o.clickT = -999; });
+    autoIdx = ORBS.length;          // 调试模式跳过自动出句
     state.absorbed = ORBS.length;
     state.heartK = 1;
     state.heartTarget = 1;
