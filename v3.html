@@ -60,11 +60,18 @@
     background:linear-gradient(90deg, transparent, rgba(255,190,220,.55), transparent);
   }
   .blessBox {
-    position:relative; width:100%; height:96px;
+    position:relative; width:100%; height:104px; overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg, transparent 0%, #000 20%, #000 80%, transparent 100%);
+    mask-image:linear-gradient(180deg, transparent 0%, #000 20%, #000 80%, transparent 100%);
+  }
+  .blessTrack {
+    display:flex; flex-direction:column; will-change:transform;
+  }
+  .blessRow {
+    height:104px; flex:none;
     display:flex; align-items:center; justify-content:center;
   }
   .blessCol .bl {
-    position:absolute; left:0; right:0; text-align:center;
     font:50px/1 "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif;
     letter-spacing:.02em; white-space:nowrap;
     background:linear-gradient(180deg, #ffffff 0%, #ffd9ec 46%, #ff9fc9 100%);
@@ -2011,7 +2018,7 @@
     grid.appendChild(col);
   }
 
-  // 第二列：祝福语逐字轮播（祝 → Y → Y → S → 天 → 天 → 得 → g → e → n，循环）
+  // 第二列：祝福语上下滚动轮播（字符像滚轮一样自下往上滑过，祝 → Y → Y → S → 天 → 天 → 得 → g → e → n）
   const BLESS_CHARS = Array.from("祝YYS天天得gen");
   function makeBless() {
     const col = document.createElement("div");
@@ -2020,9 +2027,19 @@
     const hr1 = document.createElement("i"); hr1.className = "hr";
 
     const box = document.createElement("div"); box.className = "blessBox";
-    const el = document.createElement("div"); el.className = "bl";
-    el.textContent = BLESS_CHARS[0];
-    box.appendChild(el);
+    const track = document.createElement("div"); track.className = "blessTrack";
+    const ROW_H = 104;                                   // 与 .blessRow 高度一致
+    const N = BLESS_CHARS.length;
+    for (let rep = 0; rep < 2; rep++) {                  // 两份首尾相接，滚到头复位看不出接缝
+      BLESS_CHARS.forEach((c) => {
+        const row = document.createElement("div"); row.className = "blessRow";
+        const el = document.createElement("div"); el.className = "bl";
+        el.textContent = c;
+        row.appendChild(el);
+        track.appendChild(row);
+      });
+    }
+    box.appendChild(track);
 
     const dotsWrap = document.createElement("div"); dotsWrap.className = "blessDots";
     const dots = BLESS_CHARS.map(() => {
@@ -2039,22 +2056,38 @@
     col.appendChild(hr2);
     grid.appendChild(col);
 
-    const STEP = 1250;                 // 每个字符停留 1.25 秒
-    let i = 0, anim = null;
-    const tick = () => {
-      el.textContent = BLESS_CHARS[i];
-      dots.forEach((d, k) => d.classList.toggle("on", k === i));
-      if (anim) anim.cancel();
-      anim = el.animate([
-        { opacity: 0, transform: "translateY(14px) scale(.88)", offset: 0 },
-        { opacity: 1, transform: "translateY(0) scale(1)", offset: .16 },
-        { opacity: 1, transform: "translateY(0) scale(1)", offset: .84 },
-        { opacity: 0, transform: "translateY(-14px) scale(.94)", offset: 1 }
-      ], { duration: STEP, easing: "ease-in-out" });
-      i = (i + 1) % BLESS_CHARS.length;
-      setTimeout(tick, STEP);
+    const SET_Y = (v) => { track.style.transform = "translateY(" + (-v * ROW_H) + "px)"; };
+    const DWELL = 880;      // 每个字符停留
+    const ROLL  = 430;      // 往上滚一格的时长
+    let idx = 0, anim = null;
+
+    const paint = (k) => dots.forEach((d, j) => d.classList.toggle("on", j === k));
+    SET_Y(0);
+    paint(0);
+
+    const step = () => {
+      setTimeout(() => {
+        const to = idx + 1;
+        if (anim) anim.cancel();
+        anim = track.animate(
+          [{ transform: "translateY(" + (-idx * ROW_H) + "px)" },
+           { transform: "translateY(" + (-to * ROW_H) + "px)" }],
+          { duration: ROLL, easing: "cubic-bezier(.42,0,.18,1)", fill: "forwards" }
+        );
+        anim.onfinish = () => {
+          if (to >= N) {            // 走完一轮：无缝跳回第二份的同一位置
+            anim.cancel();
+            SET_Y(0);
+            idx = 0;
+          } else {
+            idx = to;
+          }
+          paint(idx);
+          step();
+        };
+      }, DWELL);
     };
-    tick();
+    step();
   }
 
   makeCol(58, 0, false, "c1");
