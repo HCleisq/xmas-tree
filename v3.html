@@ -5,49 +5,54 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>圣诞快乐</title>
 <style>
-  html, body { margin:0; height:100%; background:#000; overflow:hidden; }
+  html, body {
+    margin:0; height:100%; overflow:hidden; background:#000;
+  }
+  /* 固定的太空底色，铺满整个视口（代码墙、画布都浮在它上面） */
+  #space {
+    position:fixed; inset:0; z-index:0;
+    background:radial-gradient(ellipse 70% 55% at 62% 40%, #07101f 0%, #03060d 45%, #000 100%);
+  }
   #stage {
-    position:fixed; top:0; right:0; bottom:0; left:38%;
-    background:
-      radial-gradient(ellipse 70% 55% at 50% 40%, #07101f 0%, #03060d 45%, #000 100%);
+    position:fixed; top:0; right:0; bottom:0; left:30%; z-index:2;
   }
   #bg, #gl { position:absolute; inset:0; width:100%; height:100%; display:block; }
   #gl { pointer-events:none; }
 
-  /* ---- 左侧：带透视的代码流 ---- */
+  /* ---- 左侧：平铺虚化的代码墙，当背景纹理用（只占左边一块） ---- */
   #code {
-    position:fixed; left:0; top:0; bottom:0; width:38%;
-    box-sizing:border-box; padding:22px 0 0 18px;
-    overflow:hidden; z-index:2;
-    background:linear-gradient(90deg, #04060c 0%, #04070e 82%, rgba(4,7,14,0) 100%);
-    border-right:1px solid rgba(110,170,255,.08);
+    position:fixed; left:0; top:0; bottom:0; width:46%;
+    overflow:hidden; pointer-events:none; z-index:1;
+    background:linear-gradient(90deg, rgba(3,6,12,.96) 0%, rgba(3,6,12,.90) 58%, rgba(3,6,12,0) 100%);
+    -webkit-mask-image:linear-gradient(90deg, #000 0%, #000 58%, transparent 98%);
+    mask-image:linear-gradient(90deg, #000 0%, #000 58%, transparent 98%);
   }
   #code::after {
     content:""; position:absolute; inset:0; pointer-events:none;
-    background:radial-gradient(ellipse 60% 45% at 12% 18%, rgba(60,130,255,.10), transparent 70%);
+    background:radial-gradient(ellipse 55% 40% at 14% 16%, rgba(60,130,255,.10), transparent 70%);
   }
   .codeHead {
-    font:11px/1.7 Consolas, "Cascadia Mono", monospace; color:#5fc3ff;
-    opacity:.6; letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px;
+    position:absolute; left:16px; top:16px;
+    font:10px/1.6 Consolas, "Cascadia Mono", monospace; color:#4fb6f0;
+    opacity:.38; letter-spacing:.18em; text-transform:uppercase;
   }
-  .codeWrap {
-    position:relative; height:calc(100% - 30px); overflow:hidden;
-    perspective:820px; perspective-origin:0% 50%;
-    -webkit-mask-image:linear-gradient(180deg, transparent 0%, #000 9%, #000 86%, transparent 100%);
-    mask-image:linear-gradient(180deg, transparent 0%, #000 9%, #000 86%, transparent 100%);
+  /* 多列平铺 + 虚化，整体当背景，不抢右边主体 */
+  .codeGrid {
+    position:absolute; inset:-4% 0 -4% 10px; display:flex; gap:14px;
+    filter:blur(2.6px) brightness(.8); opacity:.42;
   }
-  .codeInner {
-    position:absolute; left:18px; right:0; top:0; transform-style:preserve-3d;
-    transform-origin: 0% 50%;
-    transform: rotateY(26deg) rotateX(5deg) translateZ(-30px);
+  .codeCol {
+    flex:1 1 0; min-width:0; position:relative; overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg, transparent 0%, #000 11%, #000 88%, transparent 100%);
+    mask-image:linear-gradient(180deg, transparent 0%, #000 11%, #000 88%, transparent 100%);
   }
-  .codeScroll { animation: codeRoll 52s linear infinite; }
+  .codeScroll { animation: codeRoll 54s linear infinite; }
   @keyframes codeRoll { from { transform: translateY(0); } to { transform: translateY(-50%); } }
   .codeLine {
-    display:flex; gap:10px; font:12.5px/1.72 Consolas, "Cascadia Mono", monospace;
-    white-space:pre; color:#8fa6c4;
+    display:flex; gap:8px; font:10.6px/1.6 Consolas, "Cascadia Mono", monospace;
+    white-space:pre; overflow:hidden; color:#8fa6c4;
   }
-  .codeLine .ln { color:#2f4a6b; width:22px; text-align:right; flex:none; user-select:none; }
+  .codeLine .ln { color:#27405c; width:16px; text-align:right; flex:none; user-select:none; }
   .codeLine .tx { color:#9ec4e8; }
   .k { color:#ff8ec4; }     /* 关键字 */
   .s { color:#ffd08a; }     /* 字符串 */
@@ -70,9 +75,10 @@
 </style>
 </head>
 <body>
+<div id="space"></div>
 <div id="code">
   <div class="codeHead">renderer.js · webgl particle field</div>
-  <div class="codeWrap"><div class="codeInner"><div class="codeScroll" id="codeList"></div></div></div>
+  <div class="codeGrid" id="codeGrid"></div>
 </div>
 <div id="stage">
   <canvas id="bg"></canvas>
@@ -1896,8 +1902,8 @@
 <script>
 // ---- 左侧代码流：随机生成、带透视的"代码墙"（与本文件里的 WebGL 写法同源） ----
 (function buildCodeWall() {
-  const list = document.getElementById("codeList");
-  if (!list) return;
+  const grid = document.getElementById("codeGrid");
+  if (!grid) return;
   const K = (s) => '<span class="k">' + s + '</span>';
   const F = (s) => '<span class="f">' + s + '</span>';
   const S = (s) => '<span class="s">"' + s + '"</span>';
@@ -1951,11 +1957,25 @@
            '<span class="tx">' + body + '</span></div>';
   }
 
-  const N_LINES = 84;
-  let a = "", b = "";
-  for (let i = 0; i < N_LINES; i++) a += lineHTML(i);
-  for (let i = 0; i < N_LINES; i++) b += lineHTML(i);
-  list.innerHTML = a + b;      // 两份相同，滚动 50% 后无缝衔接
+  // 三列平铺：每列内容各自随机，滚动速度/方向/相位错开，看起来像一整片背景代码
+  function makeCol(dur, delay, reverse) {
+    const col = document.createElement("div");
+    col.className = "codeCol";
+    const scroll = document.createElement("div");
+    scroll.className = "codeScroll";
+    scroll.style.animationDuration = dur + "s";
+    scroll.style.animationDelay = (-delay) + "s";
+    if (reverse) scroll.style.animationDirection = "reverse";
+    let html = "";
+    for (let i = 0; i < 70; i++) html += lineHTML(i);
+    for (let i = 0; i < 70; i++) html += lineHTML(i);   // 两份相同，滚一半后无缝衔接
+    scroll.innerHTML = html;
+    col.appendChild(scroll);
+    grid.appendChild(col);
+  }
+  makeCol(58, 0, false);
+  makeCol(46, 14, true);
+  makeCol(66, 30, false);
 })();
 </script>
 </body>
