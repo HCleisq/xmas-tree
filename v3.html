@@ -50,26 +50,38 @@
   /* 第三列：随机代码，虚化成背景 */
   .codeCol.c3 { filter:blur(2.6px) brightness(.8); opacity:.4; }
 
-  /* 第二列：祝福语，竖排五行，粉白发光 */
+  /* 第二列：祝福语，逐字轮播（一个字符一个字符换） */
   .blessCol {
     display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:15px; padding:0 6px;
+    gap:16px; padding:0 6px;
   }
   .blessCol .hr {
-    width:56%; height:1px; flex:none;
+    width:58%; height:1px; flex:none;
     background:linear-gradient(90deg, transparent, rgba(255,190,220,.55), transparent);
   }
-  .blessCol .bl {
-    font:23px/1.15 "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif;
-    letter-spacing:.10em; white-space:nowrap;
-    background:linear-gradient(180deg, #ffffff 0%, #ffd9ec 48%, #ff9fc9 100%);
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-    filter:drop-shadow(0 0 10px rgba(255,150,205,.55));
-    animation:blessGlow 5.5s ease-in-out infinite;
+  .blessBox {
+    position:relative; width:100%; height:96px;
+    display:flex; align-items:center; justify-content:center;
   }
-  @keyframes blessGlow {
-    0%,100% { filter:drop-shadow(0 0 9px rgba(255,150,205,.45)); transform:translateY(0); }
-    50%     { filter:drop-shadow(0 0 16px rgba(255,175,215,.75)); transform:translateY(-3px); }
+  .blessCol .bl {
+    position:absolute; left:0; right:0; text-align:center;
+    font:50px/1 "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif;
+    letter-spacing:.02em; white-space:nowrap;
+    background:linear-gradient(180deg, #ffffff 0%, #ffd9ec 46%, #ff9fc9 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 14px rgba(255,150,205,.6));
+  }
+  .blessDots {
+    display:flex; align-items:center; justify-content:center; gap:5px; flex:none;
+  }
+  .blessDots i {
+    width:4px; height:4px; border-radius:50%;
+    background:rgba(255,190,220,.28);
+    transition:background .3s, box-shadow .3s, transform .3s;
+  }
+  .blessDots i.on {
+    background:#ffd7ec; transform:scale(1.5);
+    box-shadow:0 0 8px rgba(255,170,212,.9);
   }
   .codeScroll { animation: codeRoll 54s linear infinite; }
   @keyframes codeRoll { from { transform: translateY(0); } to { transform: translateY(-50%); } }
@@ -1999,22 +2011,50 @@
     grid.appendChild(col);
   }
 
-  // 第二列：祝福语，竖排五行（祝 / YYS / 天天 / 得 / gen），粉白渐变发光
-  const BLESS_LINES = ["祝", "YYS", "天天", "得", "gen"];
+  // 第二列：祝福语逐字轮播（祝 → Y → Y → S → 天 → 天 → 得 → g → e → n，循环）
+  const BLESS_CHARS = Array.from("祝YYS天天得gen");
   function makeBless() {
     const col = document.createElement("div");
     col.className = "codeCol blessCol";
+
     const hr1 = document.createElement("i"); hr1.className = "hr";
-    col.appendChild(hr1);
-    BLESS_LINES.forEach((t) => {
-      const el = document.createElement("div");
-      el.className = "bl";
-      el.textContent = t;
-      col.appendChild(el);
+
+    const box = document.createElement("div"); box.className = "blessBox";
+    const el = document.createElement("div"); el.className = "bl";
+    el.textContent = BLESS_CHARS[0];
+    box.appendChild(el);
+
+    const dotsWrap = document.createElement("div"); dotsWrap.className = "blessDots";
+    const dots = BLESS_CHARS.map(() => {
+      const d = document.createElement("i");
+      dotsWrap.appendChild(d);
+      return d;
     });
+
     const hr2 = document.createElement("i"); hr2.className = "hr";
+
+    col.appendChild(hr1);
+    col.appendChild(box);
+    col.appendChild(dotsWrap);
     col.appendChild(hr2);
     grid.appendChild(col);
+
+    const STEP = 1250;                 // 每个字符停留 1.25 秒
+    let i = 0, anim = null;
+    const tick = () => {
+      el.textContent = BLESS_CHARS[i];
+      dots.forEach((d, k) => d.classList.toggle("on", k === i));
+      if (anim) anim.cancel();
+      anim = el.animate([
+        { opacity: 0, transform: "translateY(14px) scale(.88)", offset: 0 },
+        { opacity: 1, transform: "translateY(0) scale(1)", offset: .16 },
+        { opacity: 1, transform: "translateY(0) scale(1)", offset: .84 },
+        { opacity: 0, transform: "translateY(-14px) scale(.94)", offset: 1 }
+      ], { duration: STEP, easing: "ease-in-out" });
+      i = (i + 1) % BLESS_CHARS.length;
+      setTimeout(tick, STEP);
+    };
+    tick();
   }
 
   makeCol(58, 0, false, "c1");
