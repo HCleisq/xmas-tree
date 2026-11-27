@@ -43,7 +43,7 @@
   const TAU = Math.PI * 2;
   const TREE_HEIGHT = 12.0;
   const CAM_DIST = 13.0, CAM_HEIGHT = 6.0, PITCH = -0.25;
-  const TREE_POINTS = 38000, GROUND_POINTS = 1800, STAR_POINTS = 800, HEART_POINTS = 1500;
+  const TREE_POINTS = 52000, GROUND_POINTS = 2400, STAR_POINTS = 1000, HEART_POINTS = 1800;
 
   const BLOOM_TRAVEL = 2.0;    // 种子从树底升到树顶的用时
   const BLOOM_DUR = 0.95;      // 每颗粒子旋转绽放的用时
@@ -846,17 +846,17 @@
   }
 
   // ---------------- 尺寸 ----------------
-  // 像素预算：手机 dpr=3 等于白烧 4 倍像素，这里按总像素封顶
+  // 只面向电脑：不再为手机压像素，只按"别超过 2 倍 dpr"封顶，高分屏也保持锐利
   function pickDpr() {
     const raw = window.devicePixelRatio || 1;
     const cssPx = Math.max(1, window.innerWidth * window.innerHeight);
-    const k = Math.sqrt(2.6e6 / cssPx);
+    const k = Math.sqrt(5.2e6 / cssPx);
     return Math.max(1, Math.min(raw, 2, k));
   }
   let dpr = pickDpr();
-  let ovScale = Math.min(dpr, 1.4);    // 粒子叠层用略低分辨率，省一半填充
+  let ovScale = dpr;                   // 叠层与主画布同分辨率，不做手机降采样
   let cssW = 0, cssH = 0;
-  // 帧率自适应：点云与叠层粒子按负载做线性降级
+  // 帧率自适应：点云与叠层粒子按负载做线性降级（电脑卡了也自动降一档）
   let lastNow = 0, fpsAcc = 0, fpsN = 0, fpsVal = 60, frameQ = 1;
   let sceneN = 0;                      // 实际绘制的树点数（顶点已随机打乱，截断后仍均匀）
 
@@ -864,7 +864,7 @@
     cssW = window.innerWidth;
     cssH = window.innerHeight;
     dpr = pickDpr();
-    ovScale = Math.min(dpr, 1.4);
+    ovScale = dpr;
     for (const c of [bg, glc]) {
       c.width = Math.floor(cssW * dpr);
       c.height = Math.floor(cssH * dpr);
