@@ -43,7 +43,7 @@
   const TAU = Math.PI * 2;
   const TREE_HEIGHT = 12.0;
   const CAM_DIST = 13.0, CAM_HEIGHT = 6.0, PITCH = -0.25;
-  const TREE_POINTS = 60000, GROUND_POINTS = 3000, STAR_POINTS = 1200, HEART_POINTS = 2000;
+  const TREE_POINTS = 38000, GROUND_POINTS = 1800, STAR_POINTS = 800, HEART_POINTS = 1500;
 
   const BLOOM_TRAVEL = 2.0;    // 种子从树底升到树顶的用时
   const BLOOM_DUR = 0.95;      // 每颗粒子旋转绽放的用时
@@ -785,6 +785,15 @@
       data[i * 8 + 6] = blm[i * 2];
       data[i * 8 + 7] = blm[i * 2 + 1];
     }
+    // 随机打乱顶点顺序：降帧时按比例截断绘制，画面依旧均匀（不会只剩半棵树）
+    const tmp8 = new Float32Array(8);
+    for (let i = N_POINTS - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      tmp8.set(data.subarray(i * 8, i * 8 + 8));
+      data.copyWithin(i * 8, j * 8, j * 8 + 8);
+      data.set(tmp8, j * 8);
+    }
+    sceneN = N_POINTS;
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
 
     // 树顶爱心：独立缓冲，绘制时不做场景旋转（公告板）
@@ -837,20 +846,36 @@
   }
 
   // ---------------- 尺寸 ----------------
-  let dpr = Math.min(2, window.devicePixelRatio || 1);
+  // 像素预算：手机 dpr=3 等于白烧 4 倍像素，这里按总像素封顶
+  function pickDpr() {
+    const raw = window.devicePixelRatio || 1;
+    const cssPx = Math.max(1, window.innerWidth * window.innerHeight);
+    const k = Math.sqrt(2.6e6 / cssPx);
+    return Math.max(1, Math.min(raw, 2, k));
+  }
+  let dpr = pickDpr();
+  let ovScale = Math.min(dpr, 1.4);    // 粒子叠层用略低分辨率，省一半填充
   let cssW = 0, cssH = 0;
+  // 帧率自适应：点云与叠层粒子按负载做线性降级
+  let lastNow = 0, fpsAcc = 0, fpsN = 0, fpsVal = 60, frameQ = 1;
+  let sceneN = 0;                      // 实际绘制的树点数（顶点已随机打乱，截断后仍均匀）
 
   function resize() {
     cssW = window.innerWidth;
     cssH = window.innerHeight;
-    dpr = Math.min(2, window.devicePixelRatio || 1);
-    for (const c of [bg, glc, orbCv]) {
+    dpr = pickDpr();
+    ovScale = Math.min(dpr, 1.4);
+    for (const c of [bg, glc]) {
       c.width = Math.floor(cssW * dpr);
       c.height = Math.floor(cssH * dpr);
       c.style.width = cssW + "px";
       c.style.height = cssH + "px";
     }
-    orb2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+    orbCv.width = Math.floor(cssW * ovScale);
+    orbCv.height = Math.floor(cssH * ovScale);
+    orbCv.style.width = cssW + "px";
+    orbCv.style.height = cssH + "px";
+    orb2d.setTransform(ovScale, 0, 0, ovScale, 0, 0);
     drawBgStars();
     if (gl) gl.viewport(0, 0, glc.width, glc.height);
     if (dbgIdx >= 0 && !isFinite(DBG_CLR) && textParts.length === 0) debugShowText(dbgIdx);   // 调试用：尺寸变化后补回那句话
@@ -940,6 +965,21 @@
     const t = isFrozen ? FREEZE : (now - t0) / 1000;
     const angle = t * 0.27;
     curT = t;
+    // 帧率监测：慢下来就按比例少画点、少画叠层粒子（截断是均匀的，肉眼几乎看不出）
+    if (!isFrozen && lastNow > 0) {
+      const dtms = now - lastNow;
+      if (dtms > 0 && dtms < 400) { fpsAcc += dtms; fpsN++; }
+    }
+    lastNow = now;
+    if (fpsAcc >= 700) {
+      fpsVal = fpsN / fpsAcc * 1000;
+      fpsAcc = 0; fpsN = 0;
+      const q = fpsVal < 38 ? 0.55 : (fpsVal < 50 ? 0.75 : 1);
+      if (Math.abs(q - frameQ) > 0.01) {
+        frameQ = q;
+        sceneN = Math.floor(N_POINTS * q);
+      }
+    }
     autoAdvance(t);          // 自动逐个化字
     if (isFinite(DBG_CLR) && t >= DBG_CLR && !dbgClrDone) {
       dbgClrDone = true;
@@ -988,7 +1028,7 @@
 
       if (blastK < 0.97) {
         bindSceneAttribs(sceneBuf);
-        gl.drawArrays(gl.POINTS, 0, N_POINTS);
+        gl.drawArrays(gl.POINTS, 0, sceneN);
       }
 
       // 树顶爱心：正对镜头 + 按饱满度逐渐长出更多粒子 + 越来越亮 + 心跳缩放
@@ -1406,7 +1446,7 @@
       }
       // 两遍叠画：外层柔光晕 + 内层亮芯 → 笔画更实、边缘更清楚
       const haloK = (p.halo === undefined) ? 1 : p.halo;
-      dot(p.spr, x, y, p.sz * 1.8, al * 0.26 * haloK);
+      if (frameQ >= 0.8 || (i & 1) === 0) dot(p.spr, x, y, p.sz * 1.8, al * 0.26 * haloK);
       dot(p.core, x, y, p.sz * 0.92, Math.min(1, al * 1.02));
     }
   }
@@ -1521,6 +1561,7 @@
       const u = 1 - e;
       const x = u * u * p.x + 2 * u * e * p.cx + e * e * p.tx;
       const y = u * u * p.y + 2 * u * e * p.cy + e * e * p.ty;
+      if (frameQ < 0.8 && (i & 1)) continue;      // 低帧档：隔一个画一个
       dot(p.img || DOT_W, x, y, p.size * (1.05 - 0.35 * lt), 0.85);
     }
   }
@@ -1548,7 +1589,7 @@
   }
 
   function drawOverlay(t, angle) {
-    orb2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+    orb2d.setTransform(ovScale, 0, 0, ovScale, 0, 0);
     orb2d.clearRect(0, 0, cssW, cssH);
     orb2d.globalCompositeOperation = "lighter";
     drawOrbs(t, angle);
