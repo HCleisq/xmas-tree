@@ -39,12 +39,37 @@
   /* 多列平铺 + 虚化，整体当背景，不抢右边主体 */
   .codeGrid {
     position:absolute; inset:-4% 0 -4% 10px; display:flex; gap:14px;
-    filter:blur(2.6px) brightness(.8); opacity:.42;
   }
   .codeCol {
     flex:1 1 0; min-width:0; position:relative; overflow:hidden;
     -webkit-mask-image:linear-gradient(180deg, transparent 0%, #000 11%, #000 88%, transparent 100%);
     mask-image:linear-gradient(180deg, transparent 0%, #000 11%, #000 88%, transparent 100%);
+  }
+  /* 第一列：随机代码，清晰可读 */
+  .codeCol.c1 { filter:blur(.45px) brightness(1.06); opacity:.9; }
+  /* 第三列：随机代码，虚化成背景 */
+  .codeCol.c3 { filter:blur(2.6px) brightness(.8); opacity:.4; }
+
+  /* 第二列：祝福语，竖排五行，粉白发光 */
+  .blessCol {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:15px; padding:0 6px;
+  }
+  .blessCol .hr {
+    width:56%; height:1px; flex:none;
+    background:linear-gradient(90deg, transparent, rgba(255,190,220,.55), transparent);
+  }
+  .blessCol .bl {
+    font:23px/1.15 "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif;
+    letter-spacing:.10em; white-space:nowrap;
+    background:linear-gradient(180deg, #ffffff 0%, #ffd9ec 48%, #ff9fc9 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 10px rgba(255,150,205,.55));
+    animation:blessGlow 5.5s ease-in-out infinite;
+  }
+  @keyframes blessGlow {
+    0%,100% { filter:drop-shadow(0 0 9px rgba(255,150,205,.45)); transform:translateY(0); }
+    50%     { filter:drop-shadow(0 0 16px rgba(255,175,215,.75)); transform:translateY(-3px); }
   }
   .codeScroll { animation: codeRoll 54s linear infinite; }
   @keyframes codeRoll { from { transform: translateY(0); } to { transform: translateY(-50%); } }
@@ -1957,10 +1982,10 @@
            '<span class="tx">' + body + '</span></div>';
   }
 
-  // 三列平铺：每列内容各自随机，滚动速度/方向/相位错开，看起来像一整片背景代码
-  function makeCol(dur, delay, reverse) {
+  // 三列：①清晰随机代码 ②祝福语 ③虚化随机代码
+  function makeCol(dur, delay, reverse, cls) {
     const col = document.createElement("div");
-    col.className = "codeCol";
+    col.className = "codeCol " + (cls || "");
     const scroll = document.createElement("div");
     scroll.className = "codeScroll";
     scroll.style.animationDuration = dur + "s";
@@ -1973,9 +1998,28 @@
     col.appendChild(scroll);
     grid.appendChild(col);
   }
-  makeCol(58, 0, false);
-  makeCol(46, 14, true);
-  makeCol(66, 30, false);
+
+  // 第二列：祝福语，竖排五行（祝 / YYS / 天天 / 得 / gen），粉白渐变发光
+  const BLESS_LINES = ["祝", "YYS", "天天", "得", "gen"];
+  function makeBless() {
+    const col = document.createElement("div");
+    col.className = "codeCol blessCol";
+    const hr1 = document.createElement("i"); hr1.className = "hr";
+    col.appendChild(hr1);
+    BLESS_LINES.forEach((t) => {
+      const el = document.createElement("div");
+      el.className = "bl";
+      el.textContent = t;
+      col.appendChild(el);
+    });
+    const hr2 = document.createElement("i"); hr2.className = "hr";
+    col.appendChild(hr2);
+    grid.appendChild(col);
+  }
+
+  makeCol(58, 0, false, "c1");
+  makeBless();
+  makeCol(66, 30, false, "c3");
 })();
 </script>
 </body>
